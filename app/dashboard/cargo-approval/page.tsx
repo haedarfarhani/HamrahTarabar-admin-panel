@@ -46,41 +46,41 @@ import { CargoApprovalResponseDto, CargoLoadDto } from '@/app/types/api';
 /* ───────── Constants ───────── */
 
 const statusLabels: Record<string, string> = {
-  Unpublished: 'منتظر تأیید',
-  Edited: 'ویرایش شده',
+  PendingReview: 'در انتظار تأیید',
   Published: 'منتشر شده',
   Rejected: 'رد شده',
   Cancelled: 'لغو شده',
-  InProgress: 'در حال حمل',
   Completed: 'تکمیل شده',
   Expired: 'منقضی شده',
+  Unpublished: 'بسته شده',
+  SoftDeleted: 'حذف شده',
 };
 
 const statusColors: Record<string, string> = {
-  Unpublished: '#ff9800',
-  Edited: '#2196f3',
+  PendingReview: '#ff9800',
   Published: '#4caf50',
   Rejected: '#f44336',
   Cancelled: '#9e9e9e',
-  InProgress: '#1565c0',
   Completed: '#00c853',
   Expired: '#795548',
+  Unpublished: '#607d8b',
+  SoftDeleted: '#bdbdbd',
 };
 
 const NUMBER_STATUS: Record<number, string> = {
+  2: 'PendingReview',
   4: 'Published',
   5: 'Rejected',
   6: 'Cancelled',
   7: 'Expired',
   8: 'Completed',
-  9: 'InProgress',
-  10: 'Edited',
   11: 'Unpublished',
+  12: 'SoftDeleted',
 };
 
 const normalizeStatus = (value: unknown): string => {
   if (typeof value === 'number') {
-    return NUMBER_STATUS[value] || 'Unpublished';
+    return NUMBER_STATUS[value] || 'PendingReview';
   }
   if (typeof value === 'string') {
     const s = value.trim();
@@ -88,7 +88,7 @@ const normalizeStatus = (value: unknown): string => {
     const asNumber = Number(s);
     if (!Number.isNaN(asNumber)) return normalizeStatus(asNumber);
   }
-  return 'Unpublished';
+  return 'PendingReview';
 };
 
 const formatDate = (d?: string | null) => {
@@ -403,6 +403,14 @@ export default function CargoApprovalPage() {
                     )}
                     {item.referenceNumber && (
                       <Chip label={item.referenceNumber} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', height: 24 }} />
+                    )}
+                    {(item.previousCargoId || cargo?.previousCargoId) && (
+                      <Chip
+                        label={`بار قبلی: ${item.previousCargoId || cargo?.previousCargoId}`}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.7rem', height: 24, maxWidth: 280 }}
+                      />
                     )}
                     <Chip
                       label={statusLabels[status] || status}

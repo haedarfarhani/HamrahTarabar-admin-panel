@@ -406,14 +406,14 @@ export async function deletePermission(permissionId: string): Promise<ApiRespons
 }
 
 const CARGO_STATUS_VALUES: Record<CargoStatusName, number> = {
+  PendingReview: 2,
   Published: 4,
   Rejected: 5,
   Cancelled: 6,
   Expired: 7,
   Completed: 8,
-  InProgress: 9,
-  Edited: 10,
   Unpublished: 11,
+  SoftDeleted: 12,
 };
 
 const toCargoStatusValue = (status: CargoStatus | CargoStatusName): number =>
@@ -428,19 +428,80 @@ export async function getStatusCounts(): Promise<ApiResponse<CargoStatusCountDto
   return apiAuthRequest<CargoStatusCountDto>('/cargos/status-counts');
 }
 
+async function getCargosPagedByStatus(
+  statuses: number[],
+  page: number,
+  pageSize: number
+): Promise<ApiResponse<CargoLoadDtoPagedResult>> {
+  const response = await apiAuthRequest<CargoLoadDto[]>('/cargos');
+  const wanted = new Set(statuses);
+  const filtered = (response.data ?? []).filter((item) => wanted.has(item.status) && item.status !== 12);
+  const safePage = page < 1 ? 1 : page;
+  const safeSize = pageSize < 1 ? 20 : pageSize;
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / safeSize));
+  const start = (safePage - 1) * safeSize;
+
+  return {
+    success: response.success,
+    message: response.message,
+    errors: response.errors,
+    data: {
+      items: filtered.slice(start, start + safeSize),
+      totalCount,
+      page: safePage,
+      pageSize: safeSize,
+      totalPages,
+      hasPreviousPage: safePage > 1,
+      hasNextPage: safePage < totalPages,
+    },
+  };
+}
+
+export interface AdminCargoFilters {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  statuses?: number[];
+  originProvince?: string;
+  destinationProvince?: string;
+  vehicleType?: string;
+  cargoTypeId?: string;
+  isUrgent?: boolean;
+  freightCastType?: string;
+  loadingFrom?: string;
+  loadingTo?: string;
+  minWeight?: string;
+  maxWeight?: string;
+}
+
+export async function searchAdminCargos(
+  filters: AdminCargoFilters
+): Promise<ApiResponse<CargoLoadDtoPagedResult>> {
+  const params = new URLSearchParams();
+  params.set('page', String(filters.page ?? 1));
+  params.set('pageSize', String(filters.pageSize ?? 20));
+  if (filters.search) params.set('search', filters.search);
+  filters.statuses?.forEach((status) => params.append('statuses', String(status)));
+  if (filters.originProvince) params.set('originProvince', filters.originProvince);
+  if (filters.destinationProvince) params.set('destinationProvince', filters.destinationProvince);
+  if (filters.vehicleType) params.set('vehicleType', filters.vehicleType);
+  if (filters.cargoTypeId) params.set('cargoTypeId', filters.cargoTypeId);
+  if (filters.isUrgent !== undefined) params.set('isUrgent', String(filters.isUrgent));
+  if (filters.freightCastType) params.set('freightCastType', filters.freightCastType);
+  if (filters.loadingFrom) params.set('loadingFrom', filters.loadingFrom);
+  if (filters.loadingTo) params.set('loadingTo', filters.loadingTo);
+  if (filters.minWeight) params.set('minWeight', filters.minWeight);
+  if (filters.maxWeight) params.set('maxWeight', filters.maxWeight);
+  return apiAuthRequest<CargoLoadDtoPagedResult>(`/cargos/admin?${params.toString()}`);
+}
+
 export async function getCargosByStatus(
   statuses: CargoStatus[],
   page: number = 1,
   pageSize: number = 100
 ): Promise<ApiResponse<CargoLoadDtoPagedResult>> {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    pageSize: pageSize.toString(),
-  });
-  return apiAuthRequest<CargoLoadDtoPagedResult>(`/cargos/by-status?${params.toString()}`, {
-    method: 'POST',
-    body: JSON.stringify({ statuses }),
-  });
+  return getCargosPagedByStatus(statuses, page, pageSize);
 }
 
 export async function getCargosByStatusNames(
@@ -448,14 +509,7 @@ export async function getCargosByStatusNames(
   page: number = 1,
   pageSize: number = 20
 ): Promise<ApiResponse<CargoLoadDtoPagedResult>> {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    pageSize: pageSize.toString(),
-  });
-  return apiAuthRequest<CargoLoadDtoPagedResult>(`/cargos/by-status?${params.toString()}`, {
-    method: 'POST',
-    body: JSON.stringify({ statuses: statuses.map(toCargoStatusValue) }),
-  });
+  return getCargosPagedByStatus(statuses.map(toCargoStatusValue), page, pageSize);
 }
 
 export async function getCargoById(id: string): Promise<ApiResponse<CargoLoadDto>> {
@@ -547,4 +601,218 @@ export async function getProvinces(): Promise<ApiResponse<ProvinceDto[]>> {
 
 export async function getCitiesByProvince(provinceId: string): Promise<ApiResponse<CityDto[]>> {
   return apiRequest<CityDto[]>(`/provinces/${provinceId}/cities`);
+}
+
+export interface SupportConversation {
+  id: string;
+  userId: string;
+  userFullName: string;
+  userPhone?: string | null;
+  userKind: number;
+  userKindLabel: string;
+  status: number;
+  statusLabel: string;
+  assignedAdminId?: string | null;
+  assignedAdminName?: string | null;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+  createdDate: string;
+  unreadCount: number;
+}
+
+export interface SupportMessage {
+  id: string;
+  conversationId: string;
+  senderKind: number;
+  senderName: string;
+  text: string;
+  sentAt: string;
+  isRead: boolean;
+}
+
+export interface SupportPage {
+  items: SupportConversation[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function getSupportQueue(params: {
+  status?: number;
+  userKind?: number;
+  search?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+}): Promise<ApiResponse<SupportPage>> {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', String(params.status));
+  if (params.userKind) query.set('userKind', String(params.userKind));
+  if (params.search) query.set('search', params.search);
+  if (params.from) query.set('from', params.from);
+  if (params.to) query.set('to', params.to);
+  query.set('page', String(params.page ?? 1));
+  query.set('pageSize', '30');
+  return apiAuthRequest<SupportPage>(`/support/conversations/queue?${query.toString()}`);
+}
+
+export async function getSupportQueueCount(): Promise<ApiResponse<{ count: number }>> {
+  return apiAuthRequest<{ count: number }>('/support/conversations/queue-count');
+}
+
+export async function getSupportMessages(id: string): Promise<ApiResponse<SupportMessage[]>> {
+  return apiAuthRequest<SupportMessage[]>(`/support/conversations/${id}/messages`);
+}
+
+export async function sendSupportMessage(id: string, text: string): Promise<ApiResponse<SupportMessage>> {
+  return apiAuthRequest<SupportMessage>(`/support/conversations/${id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function markSupportRead(id: string): Promise<ApiResponse<{ count: number }>> {
+  return apiAuthRequest<{ count: number }>(`/support/conversations/${id}/read`, { method: 'POST' });
+}
+
+export async function assignSupportToMe(id: string): Promise<ApiResponse<SupportConversation>> {
+  return apiAuthRequest<SupportConversation>(`/support/conversations/${id}/assign`, { method: 'POST' });
+}
+
+export async function updateSupportStatus(id: string, status: number): Promise<ApiResponse<SupportConversation>> {
+  return apiAuthRequest<SupportConversation>(`/support/conversations/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export interface DashboardKpis {
+  pendingReview: number;
+  published: number;
+  completed: number;
+  rejected: number;
+  cancelled: number;
+  expired: number;
+  unpublished: number;
+  urgentPublished: number;
+  cargosToday: number;
+  requestsToday: number;
+  pendingRequests: number;
+  acceptedRequests: number;
+  callsToday: number;
+  callsTotal: number;
+  openSupport: number;
+  unreadSupport: number;
+  drivers: number;
+  loadOwners: number;
+  pendingReviews: number;
+  reviewsToday: number;
+  averageRating: number;
+}
+
+export interface DashboardDay {
+  date: string;
+  cargos: number;
+  requests: number;
+  calls: number;
+}
+
+export interface DashboardNameCount {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface DashboardLane {
+  origin: string;
+  destination: string;
+  count: number;
+}
+
+export interface DashboardCargoItem {
+  id: string;
+  referenceNumber?: string | null;
+  originCity: string;
+  originProvince: string;
+  destinationCity: string;
+  destinationProvince: string;
+  vehicleType: string;
+  ownerName: string;
+  isUrgent: boolean;
+  createdAt: string;
+  loadingDate?: string | null;
+}
+
+export interface DashboardRequestItem {
+  id: string;
+  cargoId: string;
+  driverName: string;
+  originCity: string;
+  destinationCity: string;
+  referenceNumber?: string | null;
+  amount?: number | null;
+  createdAt: string;
+}
+
+export interface DashboardSupportItem {
+  id: string;
+  userName: string;
+  userKind: number;
+  status: number;
+  lastMessage?: string | null;
+  at: string;
+  unread: number;
+}
+
+export interface DashboardReviewItem {
+  id: string;
+  ownerName: string;
+  reviewerName: string;
+  rating: number;
+  comment?: string | null;
+  status: number;
+  createdAt: string;
+}
+
+export interface AdminDashboard {
+  generatedAt: string;
+  kpis: DashboardKpis;
+  activity: DashboardDay[];
+  statuses: DashboardNameCount[];
+  lanes: DashboardLane[];
+  pendingCargos: DashboardCargoItem[];
+  urgentCargos: DashboardCargoItem[];
+  pendingRequests: DashboardRequestItem[];
+  supportQueue: DashboardSupportItem[];
+  recentReviews: DashboardReviewItem[];
+}
+
+export interface AdminNotificationItem {
+  id: string;
+  kind: 'cargo' | 'request' | 'support' | 'review' | string;
+  title: string;
+  body: string;
+  href: string;
+  at: string;
+}
+
+export interface AdminNotifications {
+  badge: number;
+  items: AdminNotificationItem[];
+}
+
+export async function getAdminDashboard(): Promise<ApiResponse<AdminDashboard>> {
+  return apiAuthRequest<AdminDashboard>('/admin/dashboard');
+}
+
+export async function getAdminNotifications(): Promise<ApiResponse<AdminNotifications>> {
+  return apiAuthRequest<AdminNotifications>('/admin/dashboard/notifications');
+}
+
+export function supportWebSocketUrl(): string | null {
+  const token = getStoredToken();
+  if (!token) return null;
+  const httpBase = API_BASE_URL.replace(/\/$/, '');
+  const wsBase = httpBase.replace(/^http/, 'ws');
+  return `${wsBase}/api/v${API_VERSION}/support/ws?access_token=${encodeURIComponent(token)}`;
 }

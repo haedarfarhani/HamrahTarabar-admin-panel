@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Box,
   Typography,
@@ -29,6 +30,8 @@ import {
   Skeleton,
   Pagination,
   PaginationItem,
+  Paper,
+  InputAdornment,
   alpha,
   useTheme,
 } from '@mui/material';
@@ -48,7 +51,6 @@ import {
   Security as InsuranceIcon,
   Assignment as PermitIcon,
   Inventory as PackageIcon,
-  Inventory as InventoryIcon,
   Route as RouteIcon,
   AccessTime as TimeIcon,
   AttachMoney as MoneyIcon,
@@ -57,94 +59,100 @@ import {
   SwapHoriz as StatusIcon,
   Person as PersonIcon,
   VisibilityOutlined as ViewCountIcon,
+  Search as SearchIcon,
+  FilterAlt as FilterIcon,
+  RestartAlt as ResetIcon,
 } from '@mui/icons-material';
 import {
-  getCargosByStatusNames,
+  searchAdminCargos,
+  getAllCargos,
   deleteCargo,
   updateCargo,
   updateCargoStatus,
   getCargoTypes,
+  getProvinces,
+  getVehicleTypes,
 } from '@/app/lib/api';
 import {
   CargoLoadDto,
   CargoStatusName,
   CreateCargoLoadDto,
   CargoTypeDto,
+  ProvinceDto,
+  VehicleTypeDto,
 } from '@/app/types/api';
 
 /* ───────── Constants ───────── */
 
 const CARGO_STATUS_NAMES: CargoStatusName[] = [
+  'PendingReview',
   'Published',
   'Rejected',
   'Cancelled',
   'Expired',
   'Completed',
-  'InProgress',
-  'Edited',
   'Unpublished',
 ];
 
 const CARGO_STATUS_BY_NUMBER: Record<number, CargoStatusName> = {
-  1: 'Unpublished',
-  2: 'Unpublished',
-  3: 'Published',
+  2: 'PendingReview',
   4: 'Published',
   5: 'Rejected',
   6: 'Cancelled',
   7: 'Expired',
   8: 'Completed',
-  9: 'InProgress',
-  10: 'Edited',
   11: 'Unpublished',
+  12: 'SoftDeleted',
 };
 
 const LEGACY_STATUS_NAMES: Record<string, CargoStatusName> = {
-  draft: 'Unpublished',
-  underreview: 'Unpublished',
+  draft: 'PendingReview',
+  underreview: 'PendingReview',
+  pendingreview: 'PendingReview',
+  edited: 'PendingReview',
   approved: 'Published',
-  onhold: 'Unpublished',
   published: 'Published',
+  inprogress: 'Published',
+  onhold: 'Unpublished',
+  unpublished: 'Unpublished',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
   expired: 'Expired',
   completed: 'Completed',
-  inprogress: 'InProgress',
-  edited: 'Edited',
-  unpublished: 'Unpublished',
+  softdeleted: 'SoftDeleted',
 };
 
 const STATUS_TRANSITIONS: Record<CargoStatusName, CargoStatusName[]> = {
-  Unpublished: ['Published', 'Rejected', 'Cancelled'],
-  Published: ['Unpublished', 'InProgress', 'Cancelled', 'Expired', 'Edited', 'Rejected'],
-  Edited: ['Published', 'Unpublished', 'Cancelled', 'Rejected'],
-  Rejected: ['Unpublished', 'Published', 'Cancelled'],
-  InProgress: ['Completed', 'Edited', 'Cancelled'],
-  Completed: [],
-  Expired: [],
+  PendingReview: ['Published', 'Rejected'],
+  Published: ['Rejected', 'Cancelled', 'Expired', 'Completed'],
+  Rejected: ['Published', 'Cancelled'],
+  Unpublished: ['Cancelled', 'Completed'],
   Cancelled: [],
+  Expired: [],
+  Completed: [],
+  SoftDeleted: [],
 };
 
 const statusLabels: Record<CargoStatusName, string> = {
+  PendingReview: 'در انتظار تأیید',
   Published: 'منتشر شده',
   Rejected: 'رد شده',
   Cancelled: 'لغو شده',
   Expired: 'منقضی شده',
   Completed: 'تکمیل شده',
-  InProgress: 'در حال حمل',
-  Edited: 'ویرایش شده',
-  Unpublished: 'منتظر تأیید',
+  Unpublished: 'بسته شده',
+  SoftDeleted: 'حذف شده',
 };
 
 const statusColors: Record<CargoStatusName, string> = {
+  PendingReview: '#ff9800',
   Published: '#4caf50',
   Rejected: '#f44336',
   Cancelled: '#9e9e9e',
   Expired: '#795548',
   Completed: '#00c853',
-  InProgress: '#1565c0',
-  Edited: '#2196f3',
-  Unpublished: '#ff9800',
+  Unpublished: '#607d8b',
+  SoftDeleted: '#bdbdbd',
 };
 
 const freightCastTypeLabels: Record<string, string> = {
@@ -174,17 +182,39 @@ type FilterStatus = 'all' | 'pending' | CargoStatusName;
 
 const filterTabs: { value: FilterStatus; label: string; emoji: string }[] = [
   { value: 'all', label: 'همه', emoji: '📦' },
-  { value: 'pending', label: 'منتظر تأیید', emoji: '⏳' },
+  { value: 'pending', label: 'در انتظار تأیید', emoji: '⏳' },
   { value: 'Published', label: 'منتشر شده', emoji: '🚀' },
   { value: 'Rejected', label: 'رد شده', emoji: '❌' },
-  { value: 'InProgress', label: 'در حال حمل', emoji: '🚚' },
+  { value: 'Unpublished', label: 'بسته شده', emoji: '📁' },
 ];
 
 const statusesForFilter = (filter: FilterStatus): CargoStatusName[] => {
   if (filter === 'all') return CARGO_STATUS_NAMES;
-  if (filter === 'pending') return ['Unpublished', 'Edited'];
+  if (filter === 'pending') return ['PendingReview'];
   return [filter];
 };
+
+const STATUS_VALUE: Record<CargoStatusName, number> = {
+  PendingReview: 2,
+  Published: 4,
+  Rejected: 5,
+  Cancelled: 6,
+  Expired: 7,
+  Completed: 8,
+  Unpublished: 11,
+  SoftDeleted: 12,
+};
+
+const FREIGHT_OPTIONS = [
+  { value: 'Negotiable', label: 'توافقی' },
+  { value: 'PerTon', label: 'به ازای هر تن' },
+  { value: 'TotalLoad', label: 'کل بار' },
+  { value: 'PerKilometer', label: 'به ازای هر کیلومتر' },
+  { value: 'Fixed', label: 'ثابت' },
+];
+
+const includesText = (value: string | null | undefined, query: string) =>
+  (value || '').toLowerCase().includes(query.toLowerCase());
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
@@ -192,7 +222,7 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 const normalizeCargoStatus = (value: unknown): CargoStatusName => {
   if (typeof value === 'number') {
-    return CARGO_STATUS_BY_NUMBER[value] || 'Unpublished';
+    return CARGO_STATUS_BY_NUMBER[value] || 'PendingReview';
   }
 
   if (typeof value === 'string') {
@@ -203,7 +233,7 @@ const normalizeCargoStatus = (value: unknown): CargoStatusName => {
     if (!Number.isNaN(asNumber) && CARGO_STATUS_BY_NUMBER[asNumber]) {
       return CARGO_STATUS_BY_NUMBER[asNumber];
     }
-    return 'Unpublished';
+    return 'PendingReview';
   }
 
   if (value && typeof value === 'object') {
@@ -214,7 +244,7 @@ const normalizeCargoStatus = (value: unknown): CargoStatusName => {
     }
   }
 
-  return 'Unpublished';
+  return 'PendingReview';
 };
 
 const formatDate = (d?: string | null) => {
@@ -235,7 +265,7 @@ const formatPrice = (val?: number, currency?: string, displayText?: string) => {
 
 /* ───────── Page ───────── */
 
-export default function CargosPage() {
+function CargosPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
@@ -249,11 +279,29 @@ export default function CargosPage() {
     severity: 'success',
   });
 
+  const searchParams = useSearchParams();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [originProvince, setOriginProvince] = useState('');
+  const [destinationProvince, setDestinationProvince] = useState('');
+  const [vehicleType, setVehicleType] = useState('');
+  const [cargoTypeId, setCargoTypeId] = useState('');
+  const [freight, setFreight] = useState('');
+  const [urgent, setUrgent] = useState<'' | 'yes' | 'no'>('');
+  const [loadingFrom, setLoadingFrom] = useState('');
+  const [loadingTo, setLoadingTo] = useState('');
+  const [minWeight, setMinWeight] = useState('');
+  const [maxWeight, setMaxWeight] = useState('');
+  const [provinces, setProvinces] = useState<ProvinceDto[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeDto[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
+  const allCargosRef = useRef<CargoLoadDto[] | null>(null);
+  const useServerRef = useRef(true);
 
   // Dialogs
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -268,47 +316,166 @@ export default function CargosPage() {
   const [statusReason, setStatusReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchCargos = (status: FilterStatus, currentPage: number, size: number) => {
-    getCargosByStatusNames(statusesForFilter(status), currentPage, size)
-      .then((response) => {
-        if (response.success && response.data) {
-          setCargos(response.data.items);
-          setTotalCount(response.data.totalCount);
-          setTotalPages(response.data.totalPages || 1);
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) setSearchInput(q);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterStatus, originProvince, destinationProvince, vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight]);
+
+  const applyPage = (items: CargoLoadDto[], currentPage: number, size: number) => {
+    const start = (currentPage - 1) * size;
+    setCargos(items.slice(start, start + size));
+    setTotalCount(items.length);
+    setTotalPages(Math.max(1, Math.ceil(items.length / size)));
+  };
+
+  const matchesLocal = (cargo: CargoLoadDto) => {
+    const allowed = new Set(statusesForFilter(filterStatus).map((name) => STATUS_VALUE[name]));
+    if (!allowed.has(cargo.status) || cargo.status === 12) return false;
+    if (originProvince && cargo.originProvince !== originProvince) return false;
+    if (destinationProvince && cargo.destinationProvince !== destinationProvince) return false;
+    if (vehicleType && !includesText(cargo.vehicleType, vehicleType)) return false;
+    if (cargoTypeId && cargo.cargoTypeID !== cargoTypeId) return false;
+    if (freight && cargo.freightCastType !== freight) return false;
+    if (urgent === 'yes' && !cargo.isUrgent) return false;
+    if (urgent === 'no' && cargo.isUrgent) return false;
+    if (minWeight && cargo.cargoWeight < Number(minWeight)) return false;
+    if (maxWeight && cargo.cargoWeight > Number(maxWeight)) return false;
+    if (loadingFrom && (cargo.loadingDate || '').slice(0, 10) < loadingFrom) return false;
+    if (loadingTo && (cargo.loadingDate || '').slice(0, 10) > loadingTo) return false;
+    if (search) {
+      const hit = [
+        cargo.referenceNumber,
+        cargo.originProvince,
+        cargo.originCity,
+        cargo.destinationProvince,
+        cargo.destinationCity,
+        cargo.cargoDescription,
+        cargo.contactPhoneNumber,
+        cargo.contactPersonName,
+        cargo.vehicleType,
+      ].some((value) => includesText(value, search));
+      if (!hit) return false;
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const statuses = statusesForFilter(filterStatus).map((name) => STATUS_VALUE[name]);
+    const query = {
+      page,
+      pageSize,
+      search,
+      statuses,
+      originProvince,
+      destinationProvince,
+      vehicleType,
+      cargoTypeId,
+      freightCastType: freight || undefined,
+      isUrgent: urgent === '' ? undefined : urgent === 'yes',
+      loadingFrom: loadingFrom || undefined,
+      loadingTo: loadingTo || undefined,
+      minWeight: minWeight || undefined,
+      maxWeight: maxWeight || undefined,
+    };
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      if (useServerRef.current) {
+        try {
+          const response = await searchAdminCargos(query);
+          if (cancelled) return;
+          if (response.success && response.data) {
+            setCargos(response.data.items.filter((item) => item.status !== 12));
+            setTotalCount(response.data.totalCount);
+            setTotalPages(response.data.totalPages || 1);
+          }
+          return;
+        } catch (err: unknown) {
+          const status = (err as { status?: number }).status;
+          if (status !== 400 && status !== 404 && status !== 405) {
+            const e = err as { message?: string; errors?: string[] };
+            if (!cancelled) setError(e.errors?.[0] || e.message || 'خطا در دریافت لیست بارها');
+            return;
+          }
+          useServerRef.current = false;
         }
-      })
-      .catch((err: unknown) => {
+      }
+
+      try {
+        if (!allCargosRef.current) {
+          const response = await getAllCargos();
+          allCargosRef.current = response.data ?? [];
+        }
+        if (cancelled) return;
+        applyPage(allCargosRef.current.filter(matchesLocal), page, pageSize);
+      } catch (err: unknown) {
         const e = err as { message?: string; errors?: string[] };
-        setError(e.errors?.[0] || e.message || 'خطا در دریافت لیست بارها');
-      })
-      .finally(() => setLoading(false));
-  };
+        if (!cancelled) setError(e.errors?.[0] || e.message || 'خطا در دریافت لیست بارها');
+      }
+    };
 
-  const loadCargos = (status: FilterStatus, currentPage: number, size: number) => {
-    setError(null);
-    setLoading(true);
-    setFilterStatus(status);
-    setPage(currentPage);
-    setPageSize(size);
-  };
+    load().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    filterStatus, page, pageSize, search, originProvince, destinationProvince,
+    vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight, reloadKey,
+  ]);
 
   useEffect(() => {
-    fetchCargos(filterStatus, page, pageSize);
-  }, [filterStatus, page, pageSize]);
-
-  useEffect(() => {
-    getCargoTypes()
-      .then((response) => {
-        if (response.success && response.data) setCargoTypes(response.data);
-      })
-      .catch(() => undefined);
+    getCargoTypes().then((response) => {
+      if (response.success && response.data) setCargoTypes(response.data);
+    }).catch(() => undefined);
+    getProvinces().then((response) => {
+      if (response.success && response.data) setProvinces(response.data);
+    }).catch(() => undefined);
+    getVehicleTypes().then((response) => {
+      if (response.success && response.data) setVehicleTypes(response.data);
+    }).catch(() => undefined);
   }, []);
 
   const refresh = () => {
+    allCargosRef.current = null;
+    useServerRef.current = true;
     setError(null);
-    setLoading(true);
-    fetchCargos(filterStatus, page, pageSize);
+    setReloadKey((current) => current + 1);
   };
+
+  const clearFilters = () => {
+    setFilterStatus('all');
+    setSearchInput('');
+    setSearch('');
+    setOriginProvince('');
+    setDestinationProvince('');
+    setVehicleType('');
+    setCargoTypeId('');
+    setFreight('');
+    setUrgent('');
+    setLoadingFrom('');
+    setLoadingTo('');
+    setMinWeight('');
+    setMaxWeight('');
+    setPage(1);
+  };
+
+  const extraFilterCount = [
+    originProvince, destinationProvince, vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight, search,
+  ].filter(Boolean).length;
 
   const handleView = (cargo: CargoLoadDto) => {
     setSelectedCargo(cargo);
@@ -436,29 +603,6 @@ export default function CargosPage() {
   const availableTransitions: CargoStatusName[] = currentStatus ? STATUS_TRANSITIONS[currentStatus] : [];
   const reasonRequired = newStatus === 'Rejected' || newStatus === 'Cancelled';
 
-  if (loading && cargos.length === 0) {
-    return (
-      <Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-          <CargoIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-            مدیریت بارها
-          </Typography>
-        </Box>
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {[1, 2, 3, 4].map((i) => (
-            <Grid key={i} size={{ xs: 6, sm: 3 }}>
-              <Skeleton variant="rounded" height={90} sx={{ borderRadius: 3 }} />
-            </Grid>
-          ))}
-        </Grid>
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} variant="rounded" height={280} sx={{ borderRadius: 3, mb: 2 }} />
-        ))}
-      </Box>
-    );
-  }
-
   return (
     <Box>
       {/* ── Page Header ── */}
@@ -510,62 +654,137 @@ export default function CargosPage() {
         </Box>
       </Box>
 
-      {/* ── View Summary ── */}
-      <Box
+      <Paper
+        elevation={0}
         sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 1,
-          mb: 2,
-          px: 2.5,
-          py: 1.5,
+          mb: 3,
+          p: 2,
           borderRadius: 3,
-          bgcolor: isDark ? alpha('#fff', 0.04) : alpha('#000', 0.03),
+          border: '1px solid',
+          borderColor: isDark ? alpha('#fff', 0.08) : alpha('#000', 0.08),
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <InventoryIcon sx={{ color: 'primary.main' }} />
-          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-            {filterTabs.find((t) => t.value === filterStatus)?.label || 'همه'}
-          </Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="جستجو: شماره بار، شهر، نام، تلفن"
+            size="small"
+            sx={{ flex: 1, minWidth: 240 }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <Chip
+            icon={<FilterIcon />}
+            label={extraFilterCount > 0 ? `${extraFilterCount.toLocaleString('fa-IR')} فیلتر` : 'فیلترها'}
+            color={extraFilterCount > 0 ? 'primary' : 'default'}
+            variant={extraFilterCount > 0 ? 'filled' : 'outlined'}
+          />
+          {extraFilterCount > 0 && (
+            <Button size="small" startIcon={<ResetIcon />} onClick={clearFilters}>
+              پاک کردن
+            </Button>
+          )}
         </Box>
-        <Typography variant="caption" color="text.secondary">
-          {totalCount.toLocaleString('fa-IR')} بار در این نما
-        </Typography>
-      </Box>
+
+        <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+          {filterTabs.map((tab) => {
+            const isActive = filterStatus === tab.value;
+            return (
+              <Button
+                key={tab.value}
+                variant={isActive ? 'contained' : 'text'}
+                size="small"
+                onClick={() => setFilterStatus(tab.value)}
+                sx={{
+                  borderRadius: 2, px: 1.5, fontWeight: isActive ? 700 : 500,
+                  bgcolor: isActive ? 'primary.main' : 'transparent',
+                  color: isActive ? '#fff' : 'text.secondary',
+                  boxShadow: isActive ? `0 2px 8px ${alpha(theme.palette.primary.main, 0.35)}` : 'none',
+                  '&:hover': { bgcolor: isActive ? 'primary.dark' : alpha(theme.palette.primary.main, 0.08) },
+                }}
+              >
+                {tab.label}
+              </Button>
+            );
+          })}
+        </Box>
+
+        <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="استان مبدأ" value={originProvince} onChange={(event) => setOriginProvince(event.target.value)}>
+              <MenuItem value="">همه</MenuItem>
+              {provinces.map((province) => (
+                <MenuItem key={province.id} value={province.name}>{province.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="استان مقصد" value={destinationProvince} onChange={(event) => setDestinationProvince(event.target.value)}>
+              <MenuItem value="">همه</MenuItem>
+              {provinces.map((province) => (
+                <MenuItem key={province.id} value={province.name}>{province.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="نوع خودرو" value={vehicleType} onChange={(event) => setVehicleType(event.target.value)}>
+              <MenuItem value="">همه</MenuItem>
+              {vehicleTypes.map((item) => (
+                <MenuItem key={item.id} value={item.name}>{item.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="نوع بار" value={cargoTypeId} onChange={(event) => setCargoTypeId(event.target.value)}>
+              <MenuItem value="">همه</MenuItem>
+              {cargoTypes.map((item) => (
+                <MenuItem key={item.cargoTypeID} value={item.cargoTypeID}>{item.name}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="نوع کرایه" value={freight} onChange={(event) => setFreight(event.target.value)}>
+              <MenuItem value="">همه</MenuItem>
+              {FREIGHT_OPTIONS.map((item) => (
+                <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <TextField select fullWidth size="small" label="فوریت" value={urgent} onChange={(event) => setUrgent(event.target.value as '' | 'yes' | 'no')}>
+              <MenuItem value="">همه</MenuItem>
+              <MenuItem value="yes">فقط فوری</MenuItem>
+              <MenuItem value="no">عادی</MenuItem>
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <TextField fullWidth size="small" type="date" label="بارگیری از" value={loadingFrom} onChange={(event) => setLoadingFrom(event.target.value)} InputLabelProps={{ shrink: true }} />
+          </Grid>
+          <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <TextField fullWidth size="small" type="date" label="بارگیری تا" value={loadingTo} onChange={(event) => setLoadingTo(event.target.value)} InputLabelProps={{ shrink: true }} />
+          </Grid>
+          <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <TextField fullWidth size="small" type="number" label="حداقل وزن" value={minWeight} onChange={(event) => setMinWeight(event.target.value)} />
+          </Grid>
+          <Grid size={{ xs: 6, sm: 6, md: 3 }}>
+            <TextField fullWidth size="small" type="number" label="حداکثر وزن" value={maxWeight} onChange={(event) => setMaxWeight(event.target.value)} />
+          </Grid>
+        </Grid>
+      </Paper>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
-
-      {/* ── Filter Tabs ── */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', p: 1, borderRadius: 3, bgcolor: isDark ? alpha('#fff', 0.04) : alpha('#000', 0.03) }}>
-        {filterTabs.map((tab) => {
-          const isActive = filterStatus === tab.value;
-          return (
-            <Button
-              key={tab.value}
-              variant={isActive ? 'contained' : 'text'}
-              size="small"
-              onClick={() => loadCargos(tab.value, 1, pageSize)}
-              sx={{
-                borderRadius: 2, px: 2, fontWeight: isActive ? 700 : 500,
-                bgcolor: isActive ? 'primary.main' : 'transparent',
-                color: isActive ? '#fff' : 'text.secondary',
-                boxShadow: isActive ? `0 2px 8px ${alpha(theme.palette.primary.main, 0.35)}` : 'none',
-                '&:hover': { bgcolor: isActive ? 'primary.dark' : alpha(theme.palette.primary.main, 0.08) },
-              }}
-            >
-              <span style={{ marginLeft: 4 }}>{tab.emoji}</span>
-              {tab.label}
-            </Button>
-          );
-        })}
-      </Box>
 
       {/* ── Cargo Cards ── */}
       {loading && cargos.length === 0 ? (
@@ -627,7 +846,10 @@ export default function CargosPage() {
                 key={size}
                 size="small"
                 variant={pageSize === size ? 'outlined' : 'text'}
-                onClick={() => loadCargos(filterStatus, 1, size)}
+                onClick={() => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
                 sx={{ minWidth: 40, borderRadius: 2, fontWeight: 700 }}
               >
                 {size.toLocaleString('fa-IR')}
@@ -638,7 +860,7 @@ export default function CargosPage() {
           <Pagination
             count={totalPages}
             page={page}
-            onChange={(_, value) => loadCargos(filterStatus, value, pageSize)}
+            onChange={(_, value) => setPage(value)}
             color="primary"
             shape="rounded"
             showFirstButton
@@ -663,6 +885,7 @@ export default function CargosPage() {
                     <Box>
                       <Typography variant="h6" sx={{ fontWeight: 700 }}>جزئیات بار</Typography>
                       {selectedCargo.referenceNumber && <Typography variant="caption" sx={{ opacity: 0.8 }}>شماره مرجع: {selectedCargo.referenceNumber}</Typography>}
+                      {selectedCargo.previousCargoId && <Typography variant="caption" sx={{ opacity: 0.8, display: 'block' }}>بار قبلی: {selectedCargo.previousCargoId}</Typography>}
                     </Box>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1033,6 +1256,14 @@ function CargoCard({ cargo, onEdit, onDelete, onViewDetails, onChangeStatus, isD
         </Box>
       </Box>
     </Card>
+  );
+}
+
+export default function CargosPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <CargosPage />
+    </Suspense>
   );
 }
 

@@ -274,26 +274,26 @@ export interface VehicleSubTypeDto {
 
 // Cargo Types
 export type CargoStatus =
+  | 2   // PendingReview
   | 4   // Published
   | 5   // Rejected
   | 6   // Cancelled
   | 7   // Expired
   | 8   // Completed
-  | 9   // InProgress
-  | 10  // Edited
-  | 11; // Unpublished
+  | 11  // Unpublished
+  | 12; // SoftDeleted
 
 export type FreightCastType = 'PerTon' | 'TotalLoad' | 'Negotiable' | 'PerKilometer' | 'Fixed';
 
 export type CargoStatusName =
+  | 'PendingReview'
   | 'Published'
   | 'Rejected'
   | 'Cancelled'
   | 'Expired'
   | 'Completed'
-  | 'InProgress'
-  | 'Edited'
-  | 'Unpublished';
+  | 'Unpublished'
+  | 'SoftDeleted';
 
 export type CargoWeightUnit = 'Ton' | 'Kilometer';
 
@@ -342,6 +342,10 @@ export interface CargoLoadDto {
   status: CargoStatus;
   statusNote: string;
   rejectionReason: string;
+  previousCargoId?: string | null;
+  closeReason?: number;
+  closeReasonLabel?: string;
+  callCount?: number;
   isDraft: boolean;
   publishedDate: string;
   expiryDate: string;
@@ -465,6 +469,7 @@ export interface CargoLoadDtoPagedResult {
 export interface CargoApprovalResponseDto {
   cargoLoadID: string;
   referenceNumber: string | null;
+  previousCargoId?: string | null;
   status: CargoStatus;
   statusNote: string | null;
   rejectionReason: string | null;
@@ -476,14 +481,17 @@ export interface CargoApprovalResponseDto {
 }
 
 export interface CargoStatusCountDto {
-  draft: number;
-  underReview: number;
-  approved: number;
-  rejected: number;
-  published: number;
-  cancelled: number;
-  expired: number;
-  completed: number;
+  pendingReview?: number;
+  published?: number;
+  rejected?: number;
+  cancelled?: number;
+  expired?: number;
+  completed?: number;
+  unpublished?: number;
+  softDeleted?: number;
+  draft?: number;
+  underReview?: number;
+  approved?: number;
 }
 
 export type ReviewStatus = 'Pending' | 'Approved' | 'Rejected';
