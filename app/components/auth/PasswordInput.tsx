@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { TextField, InputAdornment, IconButton } from '@mui/material';
 import { Eye, EyeOff } from 'lucide-react';
 import { UseFormRegisterReturn, FieldError } from 'react-hook-form';
+import { fieldSx, gridFieldSx } from './fieldStyles';
 
 interface PasswordInputProps {
   label?: string;
@@ -12,15 +13,17 @@ interface PasswordInputProps {
   error?: FieldError;
   disabled?: boolean;
   autoComplete?: string;
+  /** استایل بدون حاشیه پایین — برای استفاده در grid دو ستونه */
+  compact?: boolean;
 }
 
 export default function PasswordInput({
   label = 'رمز عبور',
-  name,
-  register,
+  register: registerProp,
   error,
   disabled = false,
   autoComplete = 'current-password',
+  compact = false,
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = useState(false);
 
@@ -30,37 +33,11 @@ export default function PasswordInput({
       label={label}
       type={showPassword ? 'text' : 'password'}
       error={!!error}
-      helperText={error?.message}
+      /* فضای متن کمکی همیشه رزرو می‌شود تا چیدمان جا به جا نشود */
+      helperText={error?.message ?? ' '}
       disabled={disabled}
       autoComplete={autoComplete}
-      sx={{
-        '& .MuiOutlinedInput-root': {
-          borderRadius: '12px',
-          backgroundColor: 'white',
-          '& .MuiOutlinedInput-notchedOutline': {
-            borderColor: error ? '#d32f2f' : 'rgba(0, 0, 0, 0.23)',
-            borderWidth: '1px',
-            borderStyle: 'solid',
-          },
-          '&:hover .MuiOutlinedInput-notchedOutline': {
-            borderColor: error ? '#d32f2f' : 'rgba(0, 0, 0, 0.87)',
-          },
-          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-            borderColor: error ? '#d32f2f' : '#1976d2',
-            borderWidth: '2px',
-          },
-        },
-        '& .MuiInputBase-input': {
-          color: 'rgba(0, 0, 0, 0.87)',
-          padding: '14px 16px',
-        },
-        '& .MuiInputLabel-root': {
-          color: 'rgba(0, 0, 0, 0.6)',
-          '&.Mui-focused': {
-            color: error ? '#d32f2f' : '#1976d2',
-          },
-        },
-      }}
+      sx={compact ? gridFieldSx : fieldSx}
       slotProps={{
         input: {
           endAdornment: (
@@ -78,7 +55,7 @@ export default function PasswordInput({
           ),
         },
       }}
-      {...register}
+      {...registerProp}
     />
   );
 }

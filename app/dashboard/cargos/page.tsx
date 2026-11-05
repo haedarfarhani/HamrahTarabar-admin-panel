@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Box,
@@ -32,6 +32,8 @@ import {
   PaginationItem,
   Paper,
   InputAdornment,
+  ToggleButton,
+  ToggleButtonGroup,
   alpha,
   useTheme,
 } from '@mui/material';
@@ -42,6 +44,9 @@ import {
   Visibility as ViewIcon,
   LocalShipping as CargoIcon,
   Refresh as RefreshIcon,
+  ViewList as ViewListIcon,
+  ViewModule as TwoColIcon,
+  GridView as ThreeColIcon,
   Scale as WeightIcon,
   DirectionsCar as VehicleIcon,
   CalendarMonth as DateIcon,
@@ -73,6 +78,8 @@ import {
   getProvinces,
   getVehicleTypes,
 } from '@/app/lib/api';
+import { extractApiErrorMessage } from '@/app/lib/admin-user-errors';
+import { useCargoViewMode, CargoViewMode } from '@/app/lib/view-mode';
 import {
   CargoLoadDto,
   CargoStatusName,
@@ -297,6 +304,7 @@ function CargosPage() {
   const [vehicleTypes, setVehicleTypes] = useState<VehicleTypeDto[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [viewMode, setViewMode] = useCargoViewMode('cargos');
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
@@ -318,6 +326,8 @@ function CargosPage() {
 
   useEffect(() => {
     const q = searchParams.get('q');
+    // همگام‌سازی مقدار اولیه‌ی جست‌وجو با پارامتر URL
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q) setSearchInput(q);
   }, [searchParams]);
 
@@ -327,6 +337,8 @@ function CargosPage() {
   }, [searchInput]);
 
   useEffect(() => {
+    // بازگشت به صفحه‌ی اول با هر تغییر فیلتر
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
   }, [search, filterStatus, originProvince, destinationProvince, vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight]);
 
@@ -337,7 +349,8 @@ function CargosPage() {
     setTotalPages(Math.max(1, Math.ceil(items.length / size)));
   };
 
-  const matchesLocal = (cargo: CargoLoadDto) => {
+  const matchesLocal = useCallback(
+    (cargo: CargoLoadDto) => {
     const allowed = new Set(statusesForFilter(filterStatus).map((name) => STATUS_VALUE[name]));
     if (!allowed.has(cargo.status) || cargo.status === 12) return false;
     if (originProvince && cargo.originProvince !== originProvince) return false;
@@ -366,7 +379,9 @@ function CargosPage() {
       if (!hit) return false;
     }
     return true;
-  };
+    },
+    [filterStatus, originProvince, destinationProvince, vehicleType, cargoTypeId, freight, urgent, minWeight, maxWeight, loadingFrom, loadingTo, search]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -405,7 +420,7 @@ function CargosPage() {
           const status = (err as { status?: number }).status;
           if (status !== 400 && status !== 404 && status !== 405) {
             const e = err as { message?: string; errors?: string[] };
-            if (!cancelled) setError(e.errors?.[0] || e.message || 'خطا در دریافت لیست بارها');
+            if (!cancelled) setError(extractApiErrorMessage(e, 'خطا در دریافت لیست بارها'));
             return;
           }
           useServerRef.current = false;
@@ -421,7 +436,7 @@ function CargosPage() {
         applyPage(allCargosRef.current.filter(matchesLocal), page, pageSize);
       } catch (err: unknown) {
         const e = err as { message?: string; errors?: string[] };
-        if (!cancelled) setError(e.errors?.[0] || e.message || 'خطا در دریافت لیست بارها');
+        if (!cancelled) setError(extractApiErrorMessage(e, 'خطا در دریافت لیست بارها'));
       }
     };
 
@@ -434,7 +449,7 @@ function CargosPage() {
     };
   }, [
     filterStatus, page, pageSize, search, originProvince, destinationProvince,
-    vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight, reloadKey,
+    vehicleType, cargoTypeId, freight, urgent, loadingFrom, loadingTo, minWeight, maxWeight, reloadKey, matchesLocal,
   ]);
 
   useEffect(() => {
@@ -528,7 +543,7 @@ function CargosPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در ویرایش بار', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در ویرایش بار'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -564,10 +579,10 @@ function CargosPage() {
       const error = err as { message?: string; errors?: string[]; status?: number };
       setSnackbar({
         open: true,
-        message:
-          error.errors?.[0] ||
-          error.message ||
-          (error.status === 409 ? 'تغییر وضعیت درخواستی پشتیبانی نمی‌شود' : 'خطا در تغییر وضعیت بار'),
+        message: extractApiErrorMessage(
+          error,
+          error.status === 409 ? 'تغییر وضعیت درخواستی پشتیبانی نمی‌شود' : 'خطا در تغییر وضعیت بار'
+        ),
         severity: 'error',
       });
     } finally {
@@ -593,7 +608,7 @@ function CargosPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در حذف بار', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در حذف بار'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -631,7 +646,26 @@ function CargosPage() {
             </Typography>
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Tooltip title="نوع نمایش">
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={viewMode}
+              onChange={(_, value) => setViewMode(value as CargoViewMode)}
+              sx={{ borderRadius: 2, bgcolor: isDark ? alpha('#fff', 0.06) : alpha('#000', 0.03) }}
+            >
+              <ToggleButton value="list" aria-label="نمایش سطری" sx={{ px: 1.5 }}>
+                <ViewListIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grid2" aria-label="نمایش دو ستونه" sx={{ px: 1.5 }}>
+                <TwoColIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grid3" aria-label="نمایش سه ستونه" sx={{ px: 1.5 }}>
+                <ThreeColIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Tooltip>
           <Tooltip title="بروزرسانی">
             <IconButton
               onClick={refresh}
@@ -766,10 +800,10 @@ function CargosPage() {
             </TextField>
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 3 }}>
-            <TextField fullWidth size="small" type="date" label="بارگیری از" value={loadingFrom} onChange={(event) => setLoadingFrom(event.target.value)} InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth size="small" type="date" label="بارگیری از" value={loadingFrom} onChange={(event) => setLoadingFrom(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 3 }}>
-            <TextField fullWidth size="small" type="date" label="بارگیری تا" value={loadingTo} onChange={(event) => setLoadingTo(event.target.value)} InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth size="small" type="date" label="بارگیری تا" value={loadingTo} onChange={(event) => setLoadingTo(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 3 }}>
             <TextField fullWidth size="small" type="number" label="حداقل وزن" value={minWeight} onChange={(event) => setMinWeight(event.target.value)} />
@@ -802,9 +836,17 @@ function CargosPage() {
       ) : (
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2.5,
+            ...(viewMode === 'list'
+              ? { display: 'flex', flexDirection: 'column', gap: 2.5 }
+              : {
+                  display: 'grid',
+                  gap: 2.5,
+                  gridTemplateColumns:
+                    viewMode === 'grid2'
+                      ? { xs: '1fr', md: 'repeat(2, 1fr)' }
+                      : { xs: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' },
+                  alignItems: 'start',
+                }),
             opacity: loading ? 0.5 : 1,
             transition: 'opacity 0.2s ease',
             pointerEvents: loading ? 'none' : 'auto',

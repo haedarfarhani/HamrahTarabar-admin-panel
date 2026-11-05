@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { getReviews, updateReviewStatus } from '@/app/lib/api';
 import { ReviewAdminDto, ReviewStatus } from '@/app/types/api';
+import { extractApiErrorMessage } from '@/app/lib/admin-user-errors';
 
 /* ───────── Constants ───────── */
 
@@ -117,7 +118,7 @@ export default function ReviewsPage() {
       })
       .catch((err: unknown) => {
         const e = err as { message?: string; errors?: string[] };
-        setError(e.errors?.[0] || e.message || 'خطا در دریافت نظرات');
+        setError(extractApiErrorMessage(e, 'خطا در دریافت نظرات'));
       })
       .finally(() => setLoading(false));
   };
@@ -160,7 +161,7 @@ export default function ReviewsPage() {
       const e = err as { message?: string; errors?: string[] };
       setSnackbar({
         open: true,
-        message: e.errors?.[0] || e.message || 'خطا در تایید نظر',
+        message: extractApiErrorMessage(e, 'خطا در تایید نظر'),
         severity: 'error',
       });
     } finally {
@@ -188,7 +189,7 @@ export default function ReviewsPage() {
       const e = err as { message?: string; errors?: string[] };
       setSnackbar({
         open: true,
-        message: e.errors?.[0] || e.message || 'خطا در رد نظر',
+        message: extractApiErrorMessage(e, 'خطا در رد نظر'),
         severity: 'error',
       });
     } finally {

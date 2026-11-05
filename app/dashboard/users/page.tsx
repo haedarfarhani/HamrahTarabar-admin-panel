@@ -16,10 +16,6 @@ import {
   DialogActions,
   Grid,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   FormControl,
   InputLabel,
   Select,
@@ -36,6 +32,7 @@ import {
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
   PersonAdd as ActivateIcon,
   PersonOff as DeactivateIcon,
   People as PeopleIcon,
@@ -43,30 +40,47 @@ import {
   Visibility as ViewIcon,
   ManageAccounts as RolesIcon,
   Phone as PhoneIcon,
-  CalendarMonth as DateIcon,
-  Close as CloseIcon,
   AdminPanelSettings as AdminIcon,
-  Login as LoginIcon,
   Search as SearchIcon,
 } from '@mui/icons-material';
 import {
   getAdminUsers,
-  createUser,
   deleteAdminUser,
   activateAdminUser,
   deactivateAdminUser,
   addUserRole,
   removeUserRole,
   getRoles,
+  getUserTypes,
+  updateUser,
 } from '@/app/lib/api';
-import { AdminUserDto, CreateUserDto, RoleDetailDto } from '@/app/types/api';
+import { AdminUserDto, RoleDto, EditUserDto } from '@/app/types/api';
+import { extractApiErrorMessage } from '@/app/lib/admin-user-errors';
+import RegisterUserModal from '@/app/components/admin/RegisterUserModal';
+import { isAdministratorType, FALLBACK_USER_TYPES, toUserTypeOptions, UserTypeOption } from '@/app/lib/user-types';
+
+/**
+ * این صفحه فقط کاربران ادمین را نشان می‌دهد.
+ * شناسه‌ی نوع ادمین از GET /api/v1/UserTypes خوانده می‌شود (بدون هاردکد)؛
+ * نام نوع‌کاربر و نقش هم به‌عنوان سیگنال پشتیبان بررسی می‌شوند.
+ */
+const isAdminUser = (user: AdminUserDto, adminTypeId?: string): boolean => {
+  if (adminTypeId && user.userTypeId && user.userTypeId.toLowerCase() === adminTypeId.toLowerCase()) return true;
+  const typeName = (user.userTypeName || '').toLowerCase();
+  if (typeName.includes('admin') || typeName.includes('ادمین') || typeName.includes('مدیر')) return true;
+  const roles = user.roles ?? [];
+  return roles.some((role) => {
+    const name = (role || '').toLowerCase();
+    return name === 'administrator' || name === 'admin';
+  });
+};
 
 export default function UsersPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
   const [users, setUsers] = useState<AdminUserDto[]>([]);
-  const [roles, setRoles] = useState<RoleDetailDto[]>([]);
+  const [roles, setRoles] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -83,69 +97,50 @@ export default function UsersPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [rolesDialogOpen, setRolesDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AdminUserDto | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Create user form
-  const [formData, setFormData] = useState<CreateUserDto>({
-    username: '',
-    password: '',
-    confirmPassword: '',
-    firstName: '',
-    lastName: '',
-    phoneNumber: '',
-    roles: [],
-  });
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // فرم ویرایش + گزینه‌های نوع کاربر (از GET /api/v1/UserTypes)
+  const [editForm, setEditForm] = useState({ userName: '', firstName: '', lastName: '', phoneNumber: '', userTypeId: '' });
+  const [userTypeOptions, setUserTypeOptions] = useState<UserTypeOption[]>(() =>
+    toUserTypeOptions(FALLBACK_USER_TYPES)
+  );
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const [usersRes, rolesRes] = await Promise.all([getAdminUsers(), getRoles()]);
+      const [usersRes, rolesRes, typesRes] = await Promise.all([
+        getAdminUsers(),
+        getRoles(),
+        // عمومی است؛ تا زمان دیپلوی ممکن است 404 بدهد — در آن صورت fallback
+        getUserTypes().catch(() => null),
+      ]);
       if (usersRes.success && usersRes.data) {
-        setUsers(usersRes.data);
+        const liveTypes = typesRes?.success && typesRes.data?.length ? typesRes.data : FALLBACK_USER_TYPES;
+        setUserTypeOptions(toUserTypeOptions(liveTypes));
+        const adminTypeId = liveTypes.find(isAdministratorType)?.id;
+        // فقط کاربران ادمین نمایش داده می‌شوند
+        setUsers(usersRes.data.filter((u) => isAdminUser(u, adminTypeId)));
       }
       if (rolesRes.success && rolesRes.data) {
         setRoles(rolesRes.data);
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setError(error.errors?.[0] || error.message || 'خطا در دریافت اطلاعات');
+      setError(extractApiErrorMessage(error, 'خطا در دریافت اطلاعات'));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreate = async () => {
-    if (!formData.username || !formData.password || !formData.firstName || !formData.lastName) {
-      setSnackbar({ open: true, message: 'لطفاً فیلدهای الزامی را پر کنید', severity: 'error' });
-      return;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      setSnackbar({ open: true, message: 'رمز عبور و تکرار آن مطابقت ندارند', severity: 'error' });
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const response = await createUser(formData);
-      if (response.success) {
-        setSnackbar({ open: true, message: 'کاربر با موفقیت ایجاد شد', severity: 'success' });
-        setCreateDialogOpen(false);
-        setFormData({ username: '', password: '', confirmPassword: '', firstName: '', lastName: '', phoneNumber: '', roles: [] });
-        fetchData();
-      }
-    } catch (err: unknown) {
-      const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در ایجاد کاربر', severity: 'error' });
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  useEffect(() => {
+    // واکشی اولیه‌ی داده‌ها هنگام باز شدن صفحه
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
+  }, []);
 
   const handleDelete = async () => {
     if (!selectedUser) return;
@@ -160,7 +155,57 @@ export default function UsersPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در حذف کاربر', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در حذف کاربر'), severity: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /** باز کردن دیالوگ ویرایش — fullName به نام/نام‌خانوادگی تفکیک می‌شود */
+  const openEditDialog = (user: AdminUserDto) => {
+    const parts = (user.fullName || '').split(' ');
+    setSelectedUser(user);
+    setEditForm({
+      userName: user.userName || '',
+      firstName: parts[0] || '',
+      lastName: parts.slice(1).join(' ') || '',
+      phoneNumber: user.phoneNumber || '',
+      userTypeId: user.userTypeId || '',
+    });
+    setEditDialogOpen(true);
+  };
+
+  /** ویرایش کاربر ادمین — PATCH /api/v1/Users/{userId} */
+  const handleEdit = async () => {
+    if (!selectedUser) return;
+    if (!editForm.firstName.trim() || !editForm.lastName.trim()) {
+      setSnackbar({ open: true, message: 'نام و نام خانوادگی الزامی است', severity: 'error' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const body: EditUserDto = {
+        firstName: editForm.firstName.trim(),
+        lastName: editForm.lastName.trim(),
+        phoneNumber: editForm.phoneNumber.trim() || undefined,
+        userTypeId: editForm.userTypeId || undefined,
+      };
+      if (editForm.userName.trim()) body.userName = editForm.userName.trim();
+      const response = await updateUser(selectedUser.userId, body);
+      if (response.success) {
+        const fullName = `${body.firstName} ${body.lastName}`.trim();
+        setUsers(users.map((u) =>
+          u.userId === selectedUser.userId
+            ? { ...u, userName: body.userName ?? u.userName, fullName, phoneNumber: body.phoneNumber ?? u.phoneNumber, userTypeId: body.userTypeId ?? u.userTypeId }
+            : u
+        ));
+        setEditDialogOpen(false);
+        setSelectedUser(null);
+        setSnackbar({ open: true, message: 'کاربر با موفقیت ویرایش شد', severity: 'success' });
+      }
+    } catch (err: unknown) {
+      const error = err as { message?: string; errors?: string[] };
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در ویرایش کاربر'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -176,7 +221,7 @@ export default function UsersPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در تغییر وضعیت', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در تغییر وضعیت'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -196,7 +241,7 @@ export default function UsersPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در اضافه کردن نقش', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در اضافه کردن نقش'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -216,7 +261,7 @@ export default function UsersPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در حذف نقش', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در حذف نقش'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -345,6 +390,7 @@ export default function UsersPage() {
               <UserCard
                 user={user}
                 onView={() => { setSelectedUser(user); setViewDialogOpen(true); }}
+                onEdit={() => openEditDialog(user)}
                 onToggleActive={() => handleToggleActive(user)}
                 onManageRoles={() => { setSelectedUser(user); setSelectedRoleId(''); setRolesDialogOpen(true); }}
                 onDelete={() => { setSelectedUser(user); setDeleteDialogOpen(true); }}
@@ -357,40 +403,50 @@ export default function UsersPage() {
       )}
 
       {/* ── Dialogs ── */}
-      {/* Create Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      {/* ثبت کاربر توسط ادمین — POST /api/v1/AdminUsers/register (بدون OTP، با IsActive=false) */}
+      <RegisterUserModal
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onSuccess={() => {
+          setSnackbar({ open: true, message: 'کاربر ساخته شد، در انتظار فعال‌سازی', severity: 'success' });
+          fetchData();
+        }}
+        onError={(message) => setSnackbar({ open: true, message, severity: 'error' })}
+      />
+
+      {/* Edit Dialog — PATCH /api/v1/Users/{userId} */}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AddIcon color="secondary" />
-          ایجاد ادمین جدید
+          <EditIcon color="secondary" />
+          ویرایش کاربر ادمین
         </DialogTitle>
         <DialogContent dividers sx={{ p: 3 }}>
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام کاربری" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} fullWidth required size="small" /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="شماره تلفن" value={formData.phoneNumber} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} fullWidth dir="ltr" size="small" /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} fullWidth required size="small" /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام خانوادگی" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} fullWidth required size="small" /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="رمز عبور" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} fullWidth required size="small" /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><TextField label="تکرار رمز عبور" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} fullWidth required size="small" /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام کاربری" value={editForm.userName} onChange={(e) => setEditForm({ ...editForm, userName: e.target.value })} fullWidth size="small" /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><TextField label="شماره تلفن" value={editForm.phoneNumber} onChange={(e) => setEditForm({ ...editForm, phoneNumber: e.target.value })} fullWidth dir="ltr" size="small" /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام *" value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} fullWidth required size="small" /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><TextField label="نام خانوادگی *" value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} fullWidth required size="small" /></Grid>
             <Grid size={{ xs: 12 }}>
               <FormControl fullWidth size="small">
-                <InputLabel>نقش‌ها</InputLabel>
-                <Select multiple value={formData.roles || []} label="نقش‌ها" onChange={(e) => setFormData({ ...formData, roles: e.target.value as string[] })} renderValue={(selected) => selected.join(', ')}>
-                  {roles.map((role) => <MenuItem key={role.id} value={role.name}>{role.name} - {role.description}</MenuItem>)}
+                <InputLabel>نوع کاربر</InputLabel>
+                <Select value={editForm.userTypeId} label="نوع کاربر" onChange={(e) => setEditForm({ ...editForm, userTypeId: e.target.value })}>
+                  <MenuItem value="">بدون تغییر</MenuItem>
+                  {userTypeOptions.map((opt) => <MenuItem key={opt.id} value={opt.id}>{opt.label}</MenuItem>)}
                 </Select>
               </FormControl>
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={() => setCreateDialogOpen(false)} color="inherit">انصراف</Button>
-          <Button variant="contained" color="secondary" onClick={handleCreate} disabled={actionLoading} sx={{ borderRadius: 2, px: 4 }}>
-            {actionLoading ? <CircularProgress size={24} color="inherit" /> : 'ایجاد کاربر'}
+          <Button onClick={() => setEditDialogOpen(false)} color="inherit">انصراف</Button>
+          <Button variant="contained" color="secondary" onClick={handleEdit} disabled={actionLoading} sx={{ borderRadius: 2, px: 4 }}>
+            {actionLoading ? <CircularProgress size={24} color="inherit" /> : 'ذخیره تغییرات'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* View Details Dialog */}
-      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         {selectedUser && (
           <>
             <Box sx={{ background: `linear-gradient(135deg, ${theme.palette.secondary.main}, ${theme.palette.secondary.dark})`, color: '#fff', px: 3, py: 3, textAlign: 'center' }}>
@@ -442,7 +498,7 @@ export default function UsersPage() {
       </Dialog>
 
       {/* Roles Dialog */}
-      <Dialog open={rolesDialogOpen} onClose={() => setRolesDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <Dialog open={rolesDialogOpen} onClose={() => setRolesDialogOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
           <RolesIcon color="primary" /> مدیریت نقش‌ها
         </DialogTitle>
@@ -452,9 +508,20 @@ export default function UsersPage() {
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>نقش‌های فعلی کاربر {selectedUser.userName}</Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 3 }}>
                 {selectedUser.roles?.length > 0 ? (
-                  selectedUser.roles.map((roleName) => (
-                    <Chip key={roleName} label={roleName} onDelete={() => handleRemoveRole(roleName)} disabled={actionLoading} color="primary" sx={{ borderRadius: 2 }} />
-                  ))
+                  selectedUser.roles.map((roleName) => {
+                    const roleObj = roles.find((r) => r.name === roleName);
+                    const hasPanelAccess = roleObj?.canAccessAdminPanel;
+                    return (
+                      <Chip
+                        key={roleName}
+                        label={hasPanelAccess ? `${roleName} · دسترسی پنل` : roleName}
+                        onDelete={() => handleRemoveRole(roleName)}
+                        disabled={actionLoading}
+                        color={hasPanelAccess ? 'secondary' : 'primary'}
+                        sx={{ borderRadius: 2 }}
+                      />
+                    );
+                  })
                 ) : (
                   <Typography variant="body2" color="text.disabled">بدون نقش</Typography>
                 )}
@@ -466,7 +533,10 @@ export default function UsersPage() {
                   <InputLabel>انتخاب نقش</InputLabel>
                   <Select value={selectedRoleId} label="انتخاب نقش" onChange={(e) => setSelectedRoleId(e.target.value)}>
                     {roles.filter((r) => !selectedUser.roles?.includes(r.name)).map((role) => (
-                      <MenuItem key={role.id} value={role.id}>{role.name} - {role.description}</MenuItem>
+                      <MenuItem key={role.id} value={role.id}>
+                        {role.name} - {role.description}
+                        {role.canAccessAdminPanel ? ' (دسترسی پنل دارد)' : ''}
+                      </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -483,7 +553,7 @@ export default function UsersPage() {
       </Dialog>
 
       {/* Delete Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} slotProps={{ paper: { sx: { borderRadius: 3, p: 1 } } }}>
         <DialogTitle sx={{ fontWeight: 700, color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <DeleteIcon /> حذف ادمین
         </DialogTitle>
@@ -511,9 +581,9 @@ export default function UsersPage() {
    ═══════════════════════════════════════════════ */
 
 function UserCard({
-  user, onView, onToggleActive, onManageRoles, onDelete, actionLoading, isDark
+  user, onView, onEdit, onToggleActive, onManageRoles, onDelete, actionLoading, isDark
 }: {
-  user: AdminUserDto; onView: () => void; onToggleActive: () => void; onManageRoles: () => void; onDelete: () => void; actionLoading: boolean; isDark: boolean;
+  user: AdminUserDto; onView: () => void; onEdit: () => void; onToggleActive: () => void; onManageRoles: () => void; onDelete: () => void; actionLoading: boolean; isDark: boolean;
 }) {
   const theme = useTheme();
   const isActive = user.isActive;
@@ -565,6 +635,7 @@ function UserCard({
       {/* Actions */}
       <Box sx={{ p: 1, display: 'flex', justifyContent: 'space-around', bgcolor: isDark ? alpha('#fff', 0.02) : alpha('#000', 0.02) }}>
         <Tooltip title="مشاهده جزئیات"><IconButton size="small" onClick={onView} sx={{ color: 'text.secondary' }}><ViewIcon fontSize="small" /></IconButton></Tooltip>
+        <Tooltip title="ویرایش"><IconButton size="small" onClick={onEdit} color="info"><EditIcon fontSize="small" /></IconButton></Tooltip>
         <Tooltip title="نقش‌ها"><IconButton size="small" onClick={onManageRoles} color="primary"><RolesIcon fontSize="small" /></IconButton></Tooltip>
         <Tooltip title={isActive ? 'غیرفعال کردن' : 'فعال کردن'}><IconButton size="small" onClick={onToggleActive} disabled={actionLoading} color={isActive ? 'warning' : 'success'}>{isActive ? <DeactivateIcon fontSize="small" /> : <ActivateIcon fontSize="small" />}</IconButton></Tooltip>
         <Tooltip title="حذف"><IconButton size="small" onClick={onDelete} disabled={actionLoading} color="error"><DeleteIcon fontSize="small" /></IconButton></Tooltip>

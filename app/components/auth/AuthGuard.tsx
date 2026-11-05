@@ -11,7 +11,7 @@ const publicPaths = ['/auth/login', '/auth/register', '/auth/forgot-password'];
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { setUser, logout, isAuthenticated } = useAuthStore();
+  const { setUser, logout } = useAuthStore();
   const [checking, setChecking] = useState(true);
 
   const runCheck = useCallback(async () => {
@@ -76,6 +76,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [pathname, router, setUser, logout]);
 
   useEffect(() => {
+    // بررسی احراز هویت در هر تغییر مسیر
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChecking(true);
     runCheck();
   }, [runCheck]);

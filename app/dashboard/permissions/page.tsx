@@ -16,6 +16,7 @@ import {
   TextField,
   Grid,
   Divider,
+  Chip,
   IconButton,
   Tooltip,
   Snackbar,
@@ -34,14 +35,17 @@ import {
   Refresh as RefreshIcon,
   Category as CategoryIcon,
   Code as CodeIcon,
+  Visibility as ViewIcon,
 } from '@mui/icons-material';
 import {
   getPermissions,
   createPermission,
   updatePermission,
   deletePermission,
+  getPermissionById,
 } from '@/app/lib/api';
 import { PermissionDto, CreatePermissionDto } from '@/app/types/api';
+import { extractApiErrorMessage } from '@/app/lib/admin-user-errors';
 
 export default function PermissionsPage() {
   const theme = useTheme();
@@ -60,7 +64,9 @@ export default function PermissionsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<PermissionDto | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<CreatePermissionDto>({
@@ -69,10 +75,6 @@ export default function PermissionsPage() {
     category: '',
   });
   const [actionLoading, setActionLoading] = useState(false);
-
-  useEffect(() => {
-    fetchPermissions();
-  }, []);
 
   const fetchPermissions = async () => {
     try {
@@ -84,11 +86,17 @@ export default function PermissionsPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setError(error.errors?.[0] || error.message || 'خطا در دریافت لیست دسترسی‌ها');
+      setError(extractApiErrorMessage(error, 'خطا در دریافت لیست دسترسی‌ها'));
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // واکشی اولیه‌ی داده‌ها هنگام باز شدن صفحه
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchPermissions();
+  }, []);
 
   const handleCreate = async () => {
     if (!formData.name.trim()) {
@@ -106,7 +114,7 @@ export default function PermissionsPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در ایجاد دسترسی', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در ایجاد دسترسی'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -126,7 +134,7 @@ export default function PermissionsPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در ویرایش دسترسی', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در ویرایش دسترسی'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -145,7 +153,7 @@ export default function PermissionsPage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: error.errors?.[0] || error.message || 'خطا در حذف دسترسی', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در حذف دسترسی'), severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -164,6 +172,24 @@ export default function PermissionsPage() {
   const openDeleteDialog = (permission: PermissionDto) => {
     setSelectedPermission(permission);
     setDeleteDialogOpen(true);
+  };
+
+  /** جزئیات یک دسترسی — GET /api/v1/Permissions/{permissionId} */
+  const openDetailsDialog = async (permission: PermissionDto) => {
+    setSelectedPermission(permission);
+    setDetailsDialogOpen(true);
+    setDetailsLoading(true);
+    try {
+      const response = await getPermissionById(permission.id);
+      if (response.success && response.data) {
+        setSelectedPermission(response.data);
+      }
+    } catch (err: unknown) {
+      const error = err as { message?: string; errors?: string[] };
+      setSnackbar({ open: true, message: extractApiErrorMessage(error, 'خطا در دریافت جزئیات دسترسی'), severity: 'error' });
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   // Group permissions by category
@@ -271,6 +297,7 @@ export default function PermissionsPage() {
                             sx={{ m: 0 }}
                           />
                           <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Tooltip title="جزئیات"><IconButton size="small" onClick={() => openDetailsDialog(permission)} sx={{ color: 'text.secondary', bgcolor: alpha(theme.palette.text.secondary, 0.08), '&:hover': { bgcolor: alpha(theme.palette.text.secondary, 0.16) } }}><ViewIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="ویرایش"><IconButton size="small" onClick={() => openEditDialog(permission)} sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.2) } }}><EditIcon fontSize="small" /></IconButton></Tooltip>
                             <Tooltip title="حذف"><IconButton size="small" onClick={() => openDeleteDialog(permission)} sx={{ color: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.2) } }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
                           </Box>
@@ -288,7 +315,7 @@ export default function PermissionsPage() {
 
       {/* ── Dialogs ── */}
       {/* Create Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
           <AddIcon color="success" /> ایجاد دسترسی جدید
         </DialogTitle>
@@ -308,7 +335,7 @@ export default function PermissionsPage() {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
           <EditIcon color="success" /> ویرایش دسترسی
         </DialogTitle>
@@ -327,8 +354,54 @@ export default function PermissionsPage() {
         </DialogActions>
       </Dialog>
 
+      {/* Details Dialog — GET /api/v1/Permissions/{permissionId} */}
+      <Dialog open={detailsDialogOpen} onClose={() => setDetailsDialogOpen(false)} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        <DialogTitle sx={{ fontWeight: 700, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ViewIcon color="success" /> جزئیات دسترسی
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 3 }}>
+          {detailsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress color="success" />
+            </Box>
+          ) : selectedPermission ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">نام دسترسی (کد)</Typography>
+                <Typography variant="body1" dir="ltr" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{selectedPermission.name}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">توضیحات</Typography>
+                <Typography variant="body2">{selectedPermission.description || '-'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">دسته‌بندی</Typography>
+                <Typography variant="body2">{selectedPermission.category || '-'}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {selectedPermission.isSystemPermission !== undefined && (
+                  <Chip label={selectedPermission.isSystemPermission ? 'سیستمی' : 'سفارشی'} size="small" color={selectedPermission.isSystemPermission ? 'warning' : 'default'} />
+                )}
+                {selectedPermission.isActive !== undefined && (
+                  <Chip label={selectedPermission.isActive ? 'فعال' : 'غیرفعال'} size="small" color={selectedPermission.isActive ? 'success' : 'error'} />
+                )}
+              </Box>
+              {selectedPermission.createdDate && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">تاریخ ایجاد</Typography>
+                  <Typography variant="body2">{new Date(selectedPermission.createdDate).toLocaleDateString('fa-IR')}</Typography>
+                </Box>
+              )}
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={() => setDetailsDialogOpen(false)} color="inherit">بستن</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Delete Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} slotProps={{ paper: { sx: { borderRadius: 3, p: 1 } } }}>
         <DialogTitle sx={{ fontWeight: 700, color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <DeleteIcon /> حذف دسترسی
         </DialogTitle>

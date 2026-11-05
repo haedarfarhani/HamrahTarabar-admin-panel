@@ -18,8 +18,11 @@ import {
   Chip,
 } from '@mui/material';
 import { Person as PersonIcon, Lock as LockIcon } from '@mui/icons-material';
+import { BrandPlaceholder } from '@/app/components/brand/BrandLogo';
 import { getCurrentUser, updateProfile, changePassword } from '@/app/lib/api';
+import { PASSWORD_REGEX, PASSWORD_ERROR_MESSAGE, PASSWORD_HINT } from '@/app/lib/password';
 import { UserResponseDto, UpdateProfileDto, ChangePasswordDto } from '@/app/types/api';
+import { extractApiErrorMessage, translateBackendError } from '@/app/lib/admin-user-errors';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -64,10 +67,6 @@ export default function ProfilePage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchUser();
-  }, []);
-
   const fetchUser = async () => {
     try {
       setLoading(true);
@@ -87,11 +86,17 @@ export default function ProfilePage() {
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setError(error.errors?.[0] || error.message || 'خطا در دریافت اطلاعات کاربر');
+      setError(extractApiErrorMessage(error, 'خطا در دریافت اطلاعات کاربر'));
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // واکشی اولیه‌ی داده‌ها هنگام باز شدن صفحه
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchUser();
+  }, []);
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,11 +110,11 @@ export default function ProfilePage() {
         setSuccess('پروفایل با موفقیت به‌روزرسانی شد');
         fetchUser();
       } else {
-        setError(response.message || 'خطا در به‌روزرسانی پروفایل');
+        setError(response.message ? translateBackendError(response.message) : 'خطا در به‌روزرسانی پروفایل');
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setError(error.errors?.[0] || error.message || 'خطا در به‌روزرسانی پروفایل');
+      setError(extractApiErrorMessage(error, 'خطا در به‌روزرسانی پروفایل'));
     } finally {
       setProfileLoading(false);
     }
@@ -126,8 +131,8 @@ export default function ProfilePage() {
       errors.newPassword = 'رمز عبور جدید الزامی است';
     } else if (passwordForm.newPassword.length < 8) {
       errors.newPassword = 'رمز عبور جدید باید حداقل ۸ کاراکتر باشد';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/.test(passwordForm.newPassword)) {
-      errors.newPassword = 'رمز عبور باید شامل حروف بزرگ، کوچک، عدد و کاراکتر خاص باشد';
+    } else if (!PASSWORD_REGEX.test(passwordForm.newPassword)) {
+      errors.newPassword = PASSWORD_ERROR_MESSAGE;
     }
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
@@ -152,11 +157,11 @@ export default function ProfilePage() {
         setSuccess('رمز عبور با موفقیت تغییر کرد');
         setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       } else {
-        setError(response.message || 'خطا در تغییر رمز عبور');
+        setError(response.message ? translateBackendError(response.message) : 'خطا در تغییر رمز عبور');
       }
     } catch (err: unknown) {
       const error = err as { message?: string; errors?: string[] };
-      setError(error.errors?.[0] || error.message || 'خطا در تغییر رمز عبور');
+      setError(extractApiErrorMessage(error, 'خطا در تغییر رمز عبور'));
     } finally {
       setPasswordLoading(false);
     }
@@ -200,8 +205,8 @@ export default function ProfilePage() {
         >
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Avatar sx={{ width: 80, height: 80, bgcolor: 'primary.main' }}>
-                <PersonIcon sx={{ fontSize: 40 }} />
+              <Avatar sx={{ width: 80, height: 80, bgcolor: 'grey.100' }}>
+                <BrandPlaceholder size={52} />
               </Avatar>
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
@@ -361,7 +366,7 @@ export default function ProfilePage() {
                 />
                 <Divider />
                 <Typography variant="caption" color="text.secondary">
-                  رمز عبور باید حداقل ۸ کاراکتر شامل حروف بزرگ، کوچک، عدد و کاراکتر خاص (@$!%*?&) باشد.
+                  {PASSWORD_HINT}
                 </Typography>
                 <Button
                   type="submit"

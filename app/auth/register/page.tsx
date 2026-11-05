@@ -1,55 +1,30 @@
 'use client';
 
-import { UserPlus } from 'lucide-react';
+import { Headphones, LifeBuoy, ShieldCheck } from 'lucide-react';
+import AuthShell from '@/app/components/auth/AuthShell';
 import RegisterForm from '@/app/components/auth/RegisterForm';
+
+/** مزیت‌های حساب پشتیبانی که در پنل کناری نمایش داده می‌شوند */
+const SUPPORT_FEATURES = [
+  { icon: Headphones, text: 'پاسخ‌گویی به کاربران و پیگیری درخواست‌ها' },
+  { icon: ShieldCheck, text: 'دسترسی امن بر اساس نقش و سطح دسترسی تعیین‌شده' },
+  { icon: LifeBuoy, text: 'مدیریت تیکت‌های پشتیبانی در یک پنل یکپارچه' },
+];
 
 export default function RegisterPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-4 py-8">
-      <div className="w-full max-w-md">
-        <div
-          className="bg-white shadow-xl shadow-slate-200/50 overflow-hidden"
-          style={{
-            borderRadius: '24px',
-            border: '1px solid #e2e8f0',
-          }}
-        >
-          {/* Header */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              padding: '32px 32px 24px',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              className="mx-auto mb-4 flex items-center justify-center"
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '16px',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                backdropFilter: 'blur(8px)',
-              }}
-            >
-              <UserPlus className="text-white" style={{ width: '28px', height: '28px' }} />
-            </div>
-            <h1 className="text-2xl font-bold text-white">ثبت‌نام</h1>
-            <p className="mt-2 text-sm text-blue-100">
-              اطلاعات خود را در فرم زیر وارد کنید
-            </p>
-          </div>
-
-          {/* Form */}
-          <div style={{ padding: '28px 32px 32px' }}>
-            <RegisterForm />
-          </div>
-        </div>
-
-        <p className="mt-6 text-center text-xs text-slate-400">
-          &copy; 2026 همراه ترابر &mdash; تمامی حقوق محفوظ است
-        </p>
-      </div>
-    </div>
+    <AuthShell
+      variant="split"
+      badge="ویژه کاربران پشتیبانی"
+      title="ثبت‌نام کاربر پشتیبانی"
+      subtitle="فرم ثبت‌نام مخصوص کاربران پشتیبانی شرکت همراه ترابر است."
+      asideSubtitle="پنل پشتیبانی"
+      asideTitle="حساب پشتیبانی، کلید رسیدگی سریع به کاربران"
+      asideDescription="با ساخت حساب پشتیبانی می‌توانید درخواست‌های کاربران را پیگیری کنید، به تیکت‌ها پاسخ دهید و وضعیت بارها را بررسی کنید."
+      asideFeatures={SUPPORT_FEATURES}
+      asideNote="دسترسی این حساب بر اساس نقش و سطح دسترسی‌ای که مدیر تعیین می‌کند فعال می‌شود."
+    >
+      <RegisterForm />
+    </AuthShell>
   );
 }

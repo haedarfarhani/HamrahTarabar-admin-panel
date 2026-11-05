@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { CacheProvider } from '@emotion/react';
 import createCache from '@emotion/cache';
@@ -29,14 +29,14 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useThemeMode = () => useContext(ThemeContext);
 
 export default function ThemeProviderClient({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<ThemeMode>('light');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem('theme-mode') as ThemeMode;
-    if (saved) setMode(saved);
-  }, []);
+  // تم ذخیره‌شده فقط در سمت کلاینت قابل خواندن است؛ مقدار اولیه‌ی سرور
+  // «light» است و در رندر اول کلاینت هم به همین صورت ساخته می‌شود تا
+  // ناهماهنگی hydration پیش نیاید.
+  const [mode, setMode] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const saved = localStorage.getItem('theme-mode') as ThemeMode | null;
+    return saved === 'dark' || saved === 'light' ? saved : 'light';
+  });
 
   const toggleTheme = () => {
     setMode((prev) => {
@@ -72,10 +72,6 @@ export default function ThemeProviderClient({ children }: { children: ReactNode 
       },
     },
   });
-
-  if (!mounted) {
-    return <>{children}</>;
-  }
 
   return (
     <ThemeContext.Provider value={{ mode, toggleTheme }}>

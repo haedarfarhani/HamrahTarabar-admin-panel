@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AppBar,
@@ -10,89 +10,35 @@ import {
   Avatar,
   Menu,
   MenuItem,
-  Badge,
   InputBase,
   Box,
   Tooltip,
   Divider,
-  Popover,
-  Stack,
   Chip,
-  alpha,
-  useTheme,
 } from '@mui/material';
+import { BrandPlaceholder } from '@/app/components/brand/BrandLogo';
 import {
-  Notifications as NotificationsIcon,
   Search as SearchIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   Menu as MenuIcon,
   Person as PersonIcon,
   Logout as LogoutIcon,
-  LocalShipping as CargoIcon,
-  Handshake as RequestIcon,
-  SupportAgent as SupportIcon,
-  RateReview as ReviewIcon,
 } from '@mui/icons-material';
 import { useThemeMode } from '@/app/providers/ThemeProvider';
 import { useAuthStore } from '@/app/lib/auth-store';
-import { AdminNotificationItem, getAdminNotifications } from '@/app/lib/api';
-
-const KIND_META: Record<string, { color: string; icon: React.ReactNode }> = {
-  cargo: { color: '#f57c00', icon: <CargoIcon fontSize="small" /> },
-  request: { color: '#1565c0', icon: <RequestIcon fontSize="small" /> },
-  support: { color: '#6a1b9a', icon: <SupportIcon fontSize="small" /> },
-  review: { color: '#00897b', icon: <ReviewIcon fontSize="small" /> },
-};
-
-const n = (value: number) => value.toLocaleString('fa-IR');
-
-const when = (iso?: string) => {
-  if (!iso) return '';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (minutes < 1) return 'همین حالا';
-  if (minutes < 60) return `${n(minutes)} دقیقه پیش`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${n(hours)} ساعت پیش`;
-  const days = Math.floor(hours / 24);
-  return `${n(days)} روز پیش`;
-};
+import NotificationCenter from '@/app/components/notifications/NotificationCenter';
+import { useNotificationPolling } from '@/app/lib/notification-store';
 
 export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter();
-  const theme = useTheme();
   const { user, logout } = useAuthStore();
   const { mode, toggleTheme } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null);
   const [query, setQuery] = useState('');
-  const [badge, setBadge] = useState(0);
-  const [items, setItems] = useState<AdminNotificationItem[]>([]);
 
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const response = await getAdminNotifications();
-        if (!alive || !response.success || !response.data) return;
-        setBadge(response.data.badge ?? 0);
-        setItems(response.data.items ?? []);
-      } catch {
-        if (alive) {
-          setBadge(0);
-          setItems([]);
-        }
-      }
-    };
-    load();
-    const timer = window.setInterval(load, 30000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+  // وضعیت اعلان‌ها یک‌بار در کل پنل polling می‌شود
+  useNotificationPolling();
 
   const handleLogout = async () => {
     setAnchorEl(null);
@@ -104,11 +50,6 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     event.preventDefault();
     const q = query.trim();
     router.push(q ? `/dashboard/cargos?q=${encodeURIComponent(q)}` : '/dashboard/cargos');
-  };
-
-  const openItem = (item: AdminNotificationItem) => {
-    setNotifAnchor(null);
-    router.push(item.href);
   };
 
   const today = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
@@ -173,18 +114,20 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="اعلان‌ها">
-          <IconButton onClick={(event) => setNotifAnchor(event.currentTarget)}>
-            <Badge badgeContent={badge > 99 ? '۹۹+' : badge || undefined} color="error" max={99}>
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
-        </Tooltip>
+        <NotificationCenter />
 
         <Tooltip title="حساب کاربری">
           <IconButton onClick={(event) => setAnchorEl(event.currentTarget)}>
-            <Avatar alt={user?.fullName || 'کاربر'} sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 16 }}>
-              {user?.fullName?.[0] || <PersonIcon />}
+            <Avatar
+              alt={user?.fullName || 'کاربر'}
+              sx={{
+                width: 36,
+                height: 36,
+                bgcolor: user?.fullName ? 'primary.main' : 'grey.200',
+                fontSize: 16,
+              }}
+            >
+              {user?.fullName?.[0] || <BrandPlaceholder size={22} />}
             </Avatar>
           </IconButton>
         </Tooltip>
@@ -210,76 +153,6 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
             خروج
           </MenuItem>
         </Menu>
-
-        <Popover
-          open={Boolean(notifAnchor)}
-          anchorEl={notifAnchor}
-          onClose={() => setNotifAnchor(null)}
-          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-          slotProps={{ paper: { sx: { width: 380, maxWidth: 'calc(100vw - 24px)', borderRadius: 3, mt: 1 } } }}
-        >
-          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', px: 2, py: 1.5 }}>
-            <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>اعلان‌ها</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {badge > 0 ? `${n(badge)} مورد برای پیگیری` : 'صف خالی است'}
-              </Typography>
-            </Box>
-            <Chip size="small" label={badge > 0 ? n(badge) : '۰'} color={badge > 0 ? 'error' : 'default'} />
-          </Stack>
-          <Divider />
-          <Box sx={{ maxHeight: 420, overflow: 'auto', p: 1 }}>
-            {items.length === 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                بار، پیشنهاد، پشتیبانی یا نظری برای پیگیری نیست.
-              </Typography>
-            )}
-            {items.map((item) => {
-              const meta = KIND_META[item.kind] ?? KIND_META.cargo;
-              return (
-                <Box
-                  key={`${item.kind}-${item.id}`}
-                  onClick={() => openItem(item)}
-                  sx={{
-                    display: 'flex',
-                    gap: 1.25,
-                    p: 1.25,
-                    mb: 0.5,
-                    borderRadius: 2,
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 2,
-                      flexShrink: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: meta.color,
-                      bgcolor: alpha(meta.color, 0.12),
-                    }}
-                  >
-                    {meta.icon}
-                  </Box>
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>{item.title}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{when(item.at)}</Typography>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
-                      {item.body}
-                    </Typography>
-                  </Box>
-                </Box>
-              );
-            })}
-          </Box>
-        </Popover>
       </Toolbar>
     </AppBar>
   );

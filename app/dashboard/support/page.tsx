@@ -50,6 +50,7 @@ import {
   type SupportConversation,
   type SupportMessage,
 } from '@/app/lib/api';
+import { translateBackendError } from '@/app/lib/admin-user-errors';
 
 /* ───────── Helpers ───────── */
 
@@ -171,7 +172,7 @@ export default function SupportPage() {
         to: to ? `${to}T23:59:59Z` : undefined,
       });
       if (response.success) setItems(response.data?.items ?? []);
-      else setQueueError(response.message || 'خطا در دریافت صف پشتیبانی');
+      else setQueueError(response.message ? translateBackendError(response.message) : 'خطا در دریافت صف پشتیبانی');
     } catch {
       setQueueError('خطا در دریافت صف پشتیبانی');
     } finally {
@@ -272,7 +273,7 @@ export default function SupportPage() {
         setMessages((current) => (current.some((item) => item.id === message.id) ? current : [...current, message]));
       } else {
         setDraft(text);
-        setSnackbar({ open: true, message: response.message || 'ارسال پیام ناموفق بود', severity: 'error' });
+        setSnackbar({ open: true, message: response.message ? translateBackendError(response.message) : 'ارسال پیام ناموفق بود', severity: 'error' });
       }
     } catch {
       setDraft(text);
@@ -292,7 +293,7 @@ export default function SupportPage() {
         setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
         setSnackbar({ open: true, message: `وضعیت به «${updated.statusLabel}» تغییر کرد`, severity: 'success' });
       } else {
-        setSnackbar({ open: true, message: response.message || 'تغییر وضعیت ناموفق بود', severity: 'error' });
+        setSnackbar({ open: true, message: response.message ? translateBackendError(response.message) : 'تغییر وضعیت ناموفق بود', severity: 'error' });
       }
     } catch {
       setSnackbar({ open: true, message: 'تغییر وضعیت ناموفق بود', severity: 'error' });
@@ -311,7 +312,7 @@ export default function SupportPage() {
         setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
         setSnackbar({ open: true, message: 'گفتگو به شما اختصاص یافت', severity: 'success' });
       } else {
-        setSnackbar({ open: true, message: response.message || 'اختصاص گفتگو ناموفق بود', severity: 'error' });
+        setSnackbar({ open: true, message: response.message ? translateBackendError(response.message) : 'اختصاص گفتگو ناموفق بود', severity: 'error' });
       }
     } catch {
       setSnackbar({ open: true, message: 'اختصاص گفتگو ناموفق بود', severity: 'error' });

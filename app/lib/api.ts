@@ -1,4 +1,4 @@
-import { ApiResponse, LoginRequest, RegisterRequest, AuthData, TokenData, UserProfile, UserResponseDto, UpdateProfileDto, ChangePasswordDto, ProvinceDto, CityDto, VehicleTypeDto, CargoLoadDto, CreateCargoLoadDto, UpdateCargoLoadDto, CargoTypeDto, CargoStatusUpdateDto, AdminUserDto, RoleDto, RoleDetailDto, CreateRoleDto, UpdateRoleDto, PermissionDto, CreatePermissionDto, UpdatePermissionDto, CreateUserDto, EditUserDto, LockUserRequestDto, CargoLoadDtoPagedResult, CargoApprovalResponseDto, CargoStatus, CargoStatusCountDto, CargoStatusName, ReviewStatus, ReviewAdminDto, ReviewAdminDtoPagedResult } from '@/app/types/api';
+import { ApiResponse, LoginRequest, RegisterRequest, AuthData, TokenData, UserProfile, UserResponseDto, UpdateProfileDto, ChangePasswordDto, ProvinceDto, CityDto, VehicleTypeDto, CargoLoadDto, CreateCargoLoadDto, UpdateCargoLoadDto, CargoTypeDto, CargoStatusUpdateDto, AdminUserDto, AdminRegisterDto, AdminRegisterResultDto, UserListDto, RoleDto, RoleDetailDto, CreateRoleDto, UpdateRoleDto, PermissionDto, CreatePermissionDto,   UpdatePermissionDto, CreateUserDto, EditUserDto, CargoLoadDtoPagedResult, UsersQueryParams, UserTypeDto, CargoApprovalResponseDto, CargoStatus, CargoStatusCountDto, CargoStatusName, ReviewStatus, ReviewAdminDto, ReviewAdminDtoPagedResult } from '@/app/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5007';
 const API_VERSION = process.env.NEXT_PUBLIC_API_VERSION || '1';
@@ -114,7 +114,7 @@ async function tryRefreshToken(): Promise<boolean> {
 
 // Auth APIs
 export async function login(credentials: LoginRequest): Promise<ApiResponse<AuthData>> {
-  return apiRequest<AuthData>('/auth/login', {
+  return apiRequest<AuthData>('/auth/admin/login', {
     method: 'POST',
     body: JSON.stringify(credentials),
   });
@@ -141,15 +141,15 @@ export async function logoutServer(refreshToken: string): Promise<ApiResponse<nu
   });
 }
 
-export async function forgotPassword(phoneNumber: string): Promise<ApiResponse<null>> {
-  return apiRequest<null>('/auth/forgot-password', {
+export async function forgotPassword(identifier: string): Promise<ApiResponse<null>> {
+  return apiRequest<null>('/auth/admin/forgot-password', {
     method: 'POST',
-    body: JSON.stringify({ phoneNumber }),
+    body: JSON.stringify({ identifier }),
   });
 }
 
 export async function resetPassword(data: { phoneNumber: string; otpCode: string; newPassword: string }): Promise<ApiResponse<null>> {
-  return apiRequest<null>('/auth/reset-password', {
+  return apiRequest<null>('/auth/admin/reset-password', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -226,8 +226,29 @@ export async function changePassword(data: ChangePasswordDto): Promise<ApiRespon
 }
 
 // Regular User Management APIs
-export async function getAllUsers(): Promise<ApiResponse<AdminUserDto[]>> {
-  return apiAuthRequest<AdminUserDto[]>('/Users');
+/**
+ * لیست کاربران با فیلتر/سورت/صفحه‌بندی سمت‌سرور — GET /api/v1/Users
+ * پاسخ در data آیتم‌ها و در meta صفحه‌بندی { page, pageSize, totalCount, totalPages } دارد.
+ */
+export async function getAllUsers(params?: UsersQueryParams): Promise<ApiResponse<AdminUserDto[]>> {
+  const query = new URLSearchParams();
+  if (params?.search?.trim()) query.set('search', params.search.trim());
+  if (params?.role) query.set('role', params.role);
+  if (params?.roleId) query.set('roleId', params.roleId);
+  if (params?.userTypeId) query.set('userTypeId', params.userTypeId);
+  if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
+  if (params?.isLockedOut !== undefined) query.set('isLockedOut', String(params.isLockedOut));
+  if (params?.isBlocked !== undefined) query.set('isBlocked', String(params.isBlocked));
+  if (params?.createdFrom) query.set('createdFrom', params.createdFrom);
+  if (params?.createdTo) query.set('createdTo', params.createdTo);
+  if (params?.lastLoginFrom) query.set('lastLoginFrom', params.lastLoginFrom);
+  if (params?.lastLoginTo) query.set('lastLoginTo', params.lastLoginTo);
+  query.set('page', String(params?.page ?? 1));
+  query.set('pageSize', String(Math.min(Math.max(params?.pageSize ?? 20, 1), 100)));
+  if (params?.sortBy) query.set('sortBy', params.sortBy);
+  if (params?.sortDir) query.set('sortDir', params.sortDir);
+  const suffix = query.toString();
+  return apiAuthRequest<AdminUserDto[]>(`/Users${suffix ? `?${suffix}` : ''}`);
 }
 
 export async function getUserById(userId: string): Promise<ApiResponse<UserResponseDto>> {
@@ -294,6 +315,28 @@ export async function unblockUser(userId: string): Promise<ApiResponse<string>> 
 // Admin Users APIs
 export async function getAdminUsers(): Promise<ApiResponse<AdminUserDto[]>> {
   return apiAuthRequest<AdminUserDto[]>('/AdminUsers');
+}
+
+/**
+ * ثبت‌نام کاربر توسط ادمین — بدون OTP.
+ * POST /api/v1/AdminUsers/register → 201
+ * کاربر با IsActive=false ساخته می‌شود و تا activate نتواند لاگین کند.
+ * خطاهای 400 از errors[0] خوانده می‌شوند:
+ * "Phone number already registered." / "Username already exists." / "Invalid user type."
+ */
+export async function registerAdminUser(data: AdminRegisterDto): Promise<ApiResponse<AdminRegisterResultDto>> {
+  return apiAuthRequest<AdminRegisterResultDto>('/AdminUsers/register', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * لیست کاربران در انتظار فعال‌سازی — فقط !isActive && !isDeleted
+ * GET /api/v1/AdminUsers/pending-activation → 200 UserListDto[]
+ */
+export async function getPendingActivationUsers(): Promise<ApiResponse<UserListDto[]>> {
+  return apiAuthRequest<UserListDto[]>('/AdminUsers/pending-activation');
 }
 
 export async function deleteAdminUser(userId: string): Promise<ApiResponse<string>> {
@@ -599,6 +642,14 @@ export async function getProvinces(): Promise<ApiResponse<ProvinceDto[]>> {
   return apiRequest<ProvinceDto[]>('/provinces');
 }
 
+/**
+ * لیست نوع‌های کاربری فعال — GET /api/v1/UserTypes (عمومی، بدون نیاز به توکن).
+ * خروجی slim: id / name / description / panelRoute — فقط نوع‌های فعال.
+ */
+export async function getUserTypes(): Promise<ApiResponse<UserTypeDto[]>> {
+  return apiRequest<UserTypeDto[]>('/UserTypes');
+}
+
 export async function getCitiesByProvince(provinceId: string): Promise<ApiResponse<CityDto[]>> {
   return apiRequest<CityDto[]>(`/provinces/${provinceId}/cities`);
 }
@@ -807,6 +858,184 @@ export async function getAdminDashboard(): Promise<ApiResponse<AdminDashboard>> 
 
 export async function getAdminNotifications(): Promise<ApiResponse<AdminNotifications>> {
   return apiAuthRequest<AdminNotifications>('/admin/dashboard/notifications');
+}
+
+// ── Notifications ──
+
+/** وضعیت تحویل یک اعلان (مطابق NotificationAlertStatus در Swagger) */
+export type NotificationAlertStatus =
+  | 'Pending'
+  | 'Delivered'
+  | 'Failed'
+  | 'Suppressed'
+  | 'Processing';
+
+export interface NotificationAlertDto {
+  id: string;
+  /** کد کاتالوگ رویداد، مثلاً «Cargo.Published.Driver» */
+  typeCode?: string | null;
+  title?: string | null;
+  message?: string | null;
+  /** payload ساختاریافته به‌صورت JSON (cargoId, event, ...) */
+  payload?: string | null;
+  /** اپلیکیشن هدف: Driver، CargoOwner یا Admin */
+  targetApp?: string | null;
+  /** Pending | Delivered | Failed | Suppressed | Processing */
+  status?: string | null;
+  cargoLoadId?: string | null;
+  readAtUtc?: string | null;
+  createdDate: string;
+}
+
+export interface NotificationAlertPagedResult {
+  items?: NotificationAlertDto[] | null;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+export interface NotificationChannelDto {
+  targetApp?: string | null;
+  configured: boolean;
+  /** چهار کاراکتر آخر App ID برای شناسایی در داشبورد OneSignal */
+  appIdHint?: string | null;
+  note?: string | null;
+}
+
+export interface NotificationDatabaseDiagnosticsDto {
+  canConnect: boolean;
+  databaseName?: string | null;
+  appliedLatestMigration?: string | null;
+  pendingMigrations?: string[] | null;
+  error?: string | null;
+}
+
+export interface NotificationDiagnosticsDto {
+  basePath?: string | null;
+  timeoutSeconds: number;
+  maxAttempts: number;
+  baseRetryDelaySeconds: number;
+  maxRetryDelaySeconds: number;
+  channels?: NotificationChannelDto[] | null;
+  /** true وقتی حداقل یک App پیکربندی شده باشد */
+  canDeliver: boolean;
+  /** تعداد اعلان‌ها به تفکیک وضعیت */
+  alertsByStatus?: Record<string, number> | null;
+  /** اعلان‌هایی که هم‌اکنون کارworker روی آن‌ها claim دارد */
+  processingNow: number;
+  /** claimهای منقضی‌شده (کاندید بازیابی بعدی) */
+  staleClaims: number;
+  lastDeliveryAtUtc?: string | null;
+  /** اعلان‌های Pending که زمان backoff آن‌ها رسیده است */
+  dueNow: number;
+  database?: NotificationDatabaseDiagnosticsDto | null;
+  oldestPendingAtUtc?: string | null;
+  nextRetryAtUtc?: string | null;
+  lastSuppressedReason?: string | null;
+  lastFailureReason?: string | null;
+  /** اقدام پیشنهادی مشخص برای اپراتور */
+  diagnosis?: string | null;
+}
+
+export interface NotificationTestSendResultDto {
+  targetApp?: string | null;
+  /** true یعنی OneSignal درخواست را پذیرفت */
+  accepted: boolean;
+  oneSignalNotificationId?: string | null;
+  /** نتیجه‌ی پاک‌سازی‌شده؛ هرگز شامل کلید یا توکن نیست */
+  message?: string | null;
+}
+
+export interface NotificationAlertsQuery {
+  status?: NotificationAlertStatus | '';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MyNotificationsQuery {
+  unreadOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+const clampPage = (value?: number) => Math.max(value ?? 1, 1);
+const clampPageSize = (value?: number) => Math.min(Math.max(value ?? 20, 1), 100);
+
+/** GET /admin/notifications — تاریخچه‌ی اعلان‌ها (پشتیبانی پنل مدیریت) */
+export async function getNotificationAlerts(
+  params: NotificationAlertsQuery = {}
+): Promise<ApiResponse<NotificationAlertPagedResult>> {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', params.status);
+  query.set('page', String(clampPage(params.page)));
+  query.set('pageSize', String(clampPageSize(params.pageSize)));
+  return apiAuthRequest<NotificationAlertPagedResult>(`/admin/notifications?${query.toString()}`);
+}
+
+/** GET /admin/notifications/diagnostics — وضعیت پیکربندی و صف ارسال */
+export async function getNotificationDiagnostics(): Promise<ApiResponse<NotificationDiagnosticsDto>> {
+  return apiAuthRequest<NotificationDiagnosticsDto>('/admin/notifications/diagnostics');
+}
+
+/** POST /admin/notifications/test — ارسال یک پوش آزمایشی واقعی به شناسه‌ی خارجی خودِ ادمین */
+export async function sendTestNotification(
+  targetApp?: string
+): Promise<ApiResponse<NotificationTestSendResultDto>> {
+  return apiAuthRequest<NotificationTestSendResultDto>('/admin/notifications/test', {
+    method: 'POST',
+    body: JSON.stringify(targetApp ? { targetApp } : {}),
+  });
+}
+
+/** POST /admin/notifications/{alertId}/read — خوانده‌شدن یک اعلان (بدون محدودیت مالکیت) */
+export async function markNotificationReadByAdmin(alertId: string): Promise<ApiResponse<boolean>> {
+  return apiAuthRequest<boolean>(`/admin/notifications/${encodeURIComponent(alertId)}/read`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/** POST /admin/notifications/read-all — خواندن همه‌ی اعلان‌های سیستم */
+export async function markAllNotificationsReadByAdmin(): Promise<ApiResponse<boolean>> {
+  return apiAuthRequest<boolean>('/admin/notifications/read-all', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/** GET /me/notifications — اعلان‌های کاربر جاری */
+export async function getMyNotifications(
+  params: MyNotificationsQuery = {}
+): Promise<ApiResponse<NotificationAlertPagedResult>> {
+  const query = new URLSearchParams();
+  query.set('unreadOnly', String(params.unreadOnly ?? false));
+  query.set('page', String(clampPage(params.page)));
+  query.set('pageSize', String(clampPageSize(params.pageSize)));
+  return apiAuthRequest<NotificationAlertPagedResult>(`/me/notifications?${query.toString()}`);
+}
+
+/** GET /me/notifications/unread-count — شمار اعلان‌های خوانده‌نشده */
+export async function getMyUnreadNotificationCount(): Promise<ApiResponse<number>> {
+  return apiAuthRequest<number>('/me/notifications/unread-count');
+}
+
+/** POST /me/notifications/{alertId}/read — خوانده‌شدن یک اعلان */
+export async function markNotificationRead(alertId: string): Promise<ApiResponse<boolean>> {
+  return apiAuthRequest<boolean>(`/me/notifications/${encodeURIComponent(alertId)}/read`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/** POST /me/notifications/read-all — خواندن همه‌ی اعلان‌ها */
+export async function markAllNotificationsRead(): Promise<ApiResponse<boolean>> {
+  return apiAuthRequest<boolean>('/me/notifications/read-all', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export function supportWebSocketUrl(): string | null {

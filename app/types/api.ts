@@ -102,6 +102,8 @@ export interface AdminUserDto {
   isActive: boolean;
   isDeleted: boolean;
   isLockedOut?: boolean;
+  /** بن دائم (BlockUser) — متفاوت از قفل موقت؛ اگر بک‌اند هنوز نفرستد undefined است */
+  isBlocked?: boolean;
   roles: string[];
   createdDate: string;
   lastLoginDate: string;
@@ -109,11 +111,84 @@ export interface AdminUserDto {
   userTypeName?: string;
 }
 
+/** پارامترهای GET /api/v1/Users — همه اختیاری؛ page/pageSize پیش‌فرض 1/20 (سقف 100) */
+export type UsersSortBy = 'username' | 'createdDate' | 'lastLogin';
+export type SortDir = 'asc' | 'desc';
+
+export interface UsersQueryParams {
+  search?: string;
+  role?: string;
+  roleId?: string;
+  userTypeId?: string;
+  isActive?: boolean;
+  isLockedOut?: boolean;
+  isBlocked?: boolean;
+  createdFrom?: string;
+  createdTo?: string;
+  lastLoginFrom?: string;
+  lastLoginTo?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: UsersSortBy;
+  sortDir?: SortDir;
+}
+
+// Admin User Registration & Pending Activation Types
+// POST /api/v1/AdminUsers/register — Req=RegisterDto, Res={ userId, userName, phoneNumber, fullName, isActive:false, message }
+/** دقیقاً هم‌تراز با RegisterDto بک‌اند (swagger): username/password nullable، بقیه طبق required */
+export interface AdminRegisterDto {
+  username?: string;
+  password?: string;
+  confirmPassword?: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  livingProvince: string;
+  livingCity: string;
+  livingAddress?: string;
+  livingLatitude?: number;
+  livingLongitude?: number;
+  vehicleType?: string;
+  vehicleSubType?: string;
+  userTypeId: string;
+}
+
+export interface AdminRegisterResultDto {
+  userId: string;
+  userName?: string;
+  phoneNumber?: string;
+  fullName?: string;
+  isActive: boolean;
+  message?: string;
+}
+
+/** دقیقاً هم‌تراز با UserListDto بک‌اند (swagger) — خروجی pending-activation و لیست کاربران */
+export interface UserListDto {
+  userId: string;
+  userName?: string | null;
+  fullName?: string | null;
+  phoneNumber?: string | null;
+  userTypeId?: string | null;
+  userTypeName?: string | null;
+  isActive: boolean;
+  isDeleted: boolean;
+  isLockedOut: boolean;
+  /** بن دائم (BlockUser) — متفاوت از قفل موقت؛ اگر بک‌اند هنوز نفرستد undefined است */
+  isBlocked?: boolean;
+  createdDate: string;
+  lastLoginDate?: string | null;
+  roles?: string[] | null;
+}
+
 export interface RoleDto {
   id: string;
   name: string;
+  /** کد پایدار نقش (Driver, LoadOwner, Administrator) — اختیاری */
+  code?: string | null;
   description: string;
   isSystemRole?: boolean;
+  /** ورود کاربرانِ دارای این نقش به پنل ادمین مجاز است (درخواست/ویرایش اختیاری است؛ اگر نفرستیم مقدار قبلی حفظ می‌شود) */
+  canAccessAdminPanel?: boolean;
   isActive?: boolean;
   createdDate?: string;
   permissions?: string[];
@@ -122,10 +197,12 @@ export interface RoleDto {
 export interface RoleDetailDto {
   id: string;
   name: string;
+  code?: string | null;
   description: string;
   permissions: string[];
   permissionsList?: PermissionDto[];
   isSystemRole?: boolean;
+  canAccessAdminPanel?: boolean;
   isActive?: boolean;
   createdDate?: string;
 }
@@ -133,7 +210,9 @@ export interface RoleDetailDto {
 export interface CreateRoleDto {
   name: string;
   description: string;
+  code?: string;
   isSystemRole?: boolean;
+  canAccessAdminPanel?: boolean;
   permissionIds?: string[];
 }
 
@@ -141,6 +220,8 @@ export interface UpdateRoleDto {
   name: string;
   description: string;
   isActive?: boolean;
+  /** اختیاری — اگر ارسال نشود بک‌اند مقدار قبلی را حفظ می‌کند */
+  canAccessAdminPanel?: boolean;
   permissionIds?: string[];
 }
 
@@ -240,6 +321,17 @@ export interface DecodedToken {
 export interface ProvinceDto {
   id: string;
   name: string;
+}
+
+/**
+ * هم‌تراز با خروجی GET /api/v1/UserTypes (عمومی، فقط نوع‌های فعال، فیلدهای slim).
+ * مثال: { id: "60000000-...", name: "Administrator", description: "...", panelRoute: "/admin/dashboard" }
+ */
+export interface UserTypeDto {
+  id: string;
+  name: string;
+  description?: string | null;
+  panelRoute?: string | null;
 }
 
 export interface CityDto {

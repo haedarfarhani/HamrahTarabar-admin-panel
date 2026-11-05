@@ -13,8 +13,6 @@ import {
   ListItemText,
   Toolbar,
   Typography,
-  Collapse,
-  Avatar,
   Chip,
 } from '@mui/material';
 import {
@@ -28,12 +26,13 @@ import {
   VpnKey as PermissionsIcon,
   Settings as SettingsIcon,
   Person as ProfileIcon,
-  ChevronLeft,
-  ChevronRight,
-  Storefront as StoreIcon,
   SupportAgent as SupportIcon,
+  HourglassEmpty as PendingIcon,
+  Notifications as NotificationsIcon,
 } from '@mui/icons-material';
-import { getSupportQueueCount } from '@/app/lib/api';
+import BrandLogo from '@/app/components/brand/BrandLogo';
+import { getSupportQueueCount, getPendingActivationUsers } from '@/app/lib/api';
+import { useNotificationStore } from '@/app/lib/notification-store';
 
 const DRAWER_WIDTH = 260;
 
@@ -47,6 +46,7 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { label: 'داشبورد', href: '/dashboard', icon: <DashboardIcon /> },
   { label: 'کاربران', href: '/dashboard/regular-users', icon: <PeopleIcon /> },
+  { label: 'در انتظار تایید', href: '/dashboard/pending-users', icon: <PendingIcon /> },
   { label: 'کاربران ادمین', href: '/dashboard/users', icon: <AdminIcon /> },
   { label: 'نقش‌ها', href: '/dashboard/roles', icon: <RolesIcon /> },
   { label: 'دسترسی‌ها', href: '/dashboard/permissions', icon: <PermissionsIcon /> },
@@ -54,6 +54,7 @@ const menuItems: MenuItem[] = [
   { label: 'منتظر تأیید', href: '/dashboard/cargo-approval', icon: <ApprovalIcon /> },
   { label: 'نظرات', href: '/dashboard/reviews', icon: <CommentIcon /> },
   { label: 'پشتیبانی', href: '/dashboard/support', icon: <SupportIcon /> },
+  { label: 'اعلان‌ها', href: '/dashboard/notifications', icon: <NotificationsIcon /> },
   { label: 'پروفایل', href: '/dashboard/profile', icon: <ProfileIcon /> },
   { label: 'تنظیمات', href: '/dashboard/settings', icon: <SettingsIcon /> },
 ];
@@ -66,6 +67,8 @@ interface SidebarProps {
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const [openSupport, setOpenSupport] = useState(0);
+  const [pendingUsers, setPendingUsers] = useState(0);
+  const notificationBadge = useNotificationStore((state) => state.badge);
 
   useEffect(() => {
     let active = true;
@@ -76,6 +79,16 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         })
         .catch(() => {
           if (active) setOpenSupport(0);
+        });
+      // Badge تعداد کاربران در انتظار تایید — polling هم‌زمان با پشتیبانی
+      getPendingActivationUsers()
+        .then((response) => {
+          if (active && response.success) {
+            setPendingUsers((response.data ?? []).filter((u) => !u.isActive && !u.isDeleted).length);
+          }
+        })
+        .catch(() => {
+          if (active) setPendingUsers(0);
         });
     };
     load();
@@ -98,11 +111,9 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           borderColor: 'divider',
         }}
       >
-        <Avatar sx={{ bgcolor: 'primary.main', mr: 1.5 }}>
-          <StoreIcon />
-        </Avatar>
-        <Typography variant="h6" sx={{ fontWeight: 'bold' }} color="primary">
-          حمراهatraabar
+        <BrandLogo size={42} />
+        <Typography variant="h6" sx={{ fontWeight: 'bold', mr: 1.5 }} color="primary">
+          همراه ترابر
         </Typography>
       </Toolbar>
 
@@ -133,6 +144,21 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     size="small"
                     label={openSupport.toLocaleString('fa-IR')}
                     sx={{ bgcolor: '#e65100', color: '#fff', height: 22 }}
+                  />
+                )}
+                {item.href === '/dashboard/pending-users' && pendingUsers > 0 && (
+                  <Chip
+                    size="small"
+                    label={pendingUsers.toLocaleString('fa-IR')}
+                    sx={{ bgcolor: '#ef6c00', color: '#fff', height: 22 }}
+                  />
+                )}
+                {item.href === '/dashboard/notifications' && notificationBadge > 0 && (
+                  <Chip
+                    size="small"
+                    label={notificationBadge.toLocaleString('fa-IR')}
+                    color="error"
+                    sx={{ bgcolor: '#b71c1c', height: 22 }}
                   />
                 )}
               </ListItemButton>

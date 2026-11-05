@@ -14,34 +14,41 @@ import {
   IconButton,
   Tooltip,
   Snackbar,
-  Skeleton,
-  Divider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  alpha,
-  useTheme,
-} from '@mui/material';
-import {
-  CheckCircle as ApproveIcon,
-  Cancel as RejectIcon,
-  Visibility as ViewIcon,
-  Refresh as RefreshIcon,
-  LocalShipping as CargoIcon,
-  Schedule as PendingIcon,
-  Close as CloseIcon,
-  East as EastIcon,
-  Route as RouteIcon,
-  Scale as WeightIcon,
-  DirectionsCar as VehicleIcon,
-  CalendarMonth as DateIcon,
-  Phone as PhoneIcon,
-  AttachMoney as MoneyIcon,
-  Person as PersonIcon,
-} from '@mui/icons-material';
-import { getPendingCargos, getCargoById, approveCargo, rejectCargo } from '@/app/lib/api';
-import { CargoApprovalResponseDto, CargoLoadDto } from '@/app/types/api';
+   Skeleton,
+   Divider,
+   Dialog,
+   DialogTitle,
+   DialogContent,
+   DialogActions,
+   ToggleButton,
+   ToggleButtonGroup,
+   alpha,
+   useTheme,
+ } from '@mui/material';
+ import {
+   CheckCircle as ApproveIcon,
+   Cancel as RejectIcon,
+   Visibility as ViewIcon,
+   Refresh as RefreshIcon,
+   LocalShipping as CargoIcon,
+   Schedule as PendingIcon,
+   Close as CloseIcon,
+   East as EastIcon,
+   Route as RouteIcon,
+   Scale as WeightIcon,
+   DirectionsCar as VehicleIcon,
+   CalendarMonth as DateIcon,
+   Phone as PhoneIcon,
+   AttachMoney as MoneyIcon,
+   Person as PersonIcon,
+   ViewList as ViewListIcon,
+   ViewModule as TwoColIcon,
+   GridView as ThreeColIcon,
+ } from '@mui/icons-material';
+ import { getPendingCargos, getCargoById, approveCargo, rejectCargo } from '@/app/lib/api';
+ import { extractApiErrorMessage, translateBackendError } from '@/app/lib/admin-user-errors';
+ import { useCargoViewMode, CargoViewMode } from '@/app/lib/view-mode';
+ import { CargoApprovalResponseDto, CargoLoadDto } from '@/app/types/api';
 
 /* ───────── Constants ───────── */
 
@@ -135,6 +142,7 @@ export default function CargoApprovalPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useCargoViewMode('cargo-approval');
 
   const inFlight = useRef<Set<string>>(new Set());
   const loadedIds = useRef<Set<string>>(new Set());
@@ -156,13 +164,13 @@ export default function CargoApprovalPage() {
           loadedIds.current.add(id);
           setDetails((prev) => ({ ...prev, [id]: response.data! }));
         } else {
-          setDetailError(response.message || 'جزئیات بار در دسترس نیست');
+          setDetailError(response.message ? translateBackendError(response.message) : 'جزئیات بار در دسترس نیست');
           setFailedIds((prev) => new Set(prev).add(id));
         }
       })
       .catch((err: unknown) => {
         const e = err as { message?: string; errors?: string[] };
-        setDetailError(e.errors?.[0] || e.message || 'خطا در دریافت جزئیات بار');
+        setDetailError(extractApiErrorMessage(e, 'خطا در دریافت جزئیات بار'));
         setFailedIds((prev) => new Set(prev).add(id));
       })
       .finally(() => {
@@ -182,7 +190,7 @@ export default function CargoApprovalPage() {
       })
       .catch((err: unknown) => {
         const e = err as { message?: string; errors?: string[] };
-        setError(e.errors?.[0] || e.message || 'خطا در دریافت بارهای منتظر تأیید');
+        setError(extractApiErrorMessage(e, 'خطا در دریافت بارهای منتظر تأیید'));
       })
       .finally(() => setLoading(false));
   }, [loadDetail]);
@@ -212,7 +220,7 @@ export default function CargoApprovalPage() {
       }
     } catch (err: unknown) {
       const e = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: e.errors?.[0] || e.message || 'خطا در تأیید بار', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(e, 'خطا در تأیید بار'), severity: 'error' });
     } finally {
       setActionLoading(null);
     }
@@ -239,7 +247,7 @@ export default function CargoApprovalPage() {
       }
     } catch (err: unknown) {
       const e = err as { message?: string; errors?: string[] };
-      setSnackbar({ open: true, message: e.errors?.[0] || e.message || 'خطا در رد بار', severity: 'error' });
+      setSnackbar({ open: true, message: extractApiErrorMessage(e, 'خطا در رد بار'), severity: 'error' });
     } finally {
       setActionLoading(null);
     }
@@ -292,14 +300,35 @@ export default function CargoApprovalPage() {
             </Typography>
           </Box>
         </Box>
-        <Tooltip title="بروزرسانی">
-          <IconButton
-            onClick={refresh}
-            sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.16) } }}
-          >
-            <RefreshIcon />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Tooltip title="نوع نمایش">
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={viewMode}
+              onChange={(_, value) => setViewMode(value as CargoViewMode)}
+              sx={{ borderRadius: 2, bgcolor: isDark ? alpha('#fff', 0.06) : alpha('#000', 0.03) }}
+            >
+              <ToggleButton value="list" aria-label="نمایش سطری" sx={{ px: 1.5 }}>
+                <ViewListIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grid2" aria-label="نمایش دو ستونه" sx={{ px: 1.5 }}>
+                <TwoColIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="grid3" aria-label="نمایش سه ستونه" sx={{ px: 1.5 }}>
+                <ThreeColIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Tooltip>
+          <Tooltip title="بروزرسانی">
+            <IconButton
+              onClick={refresh}
+              sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08), '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.16) } }}
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
 
       {error && (
@@ -324,9 +353,17 @@ export default function CargoApprovalPage() {
       ) : (
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2.5,
+            ...(viewMode === 'list'
+              ? { display: 'flex', flexDirection: 'column', gap: 2.5 }
+              : {
+                  display: 'grid',
+                  gap: 2.5,
+                  gridTemplateColumns:
+                    viewMode === 'grid2'
+                      ? { xs: '1fr', md: 'repeat(2, 1fr)' }
+                      : { xs: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' },
+                  alignItems: 'start',
+                }),
             opacity: loading ? 0.5 : 1,
             transition: 'opacity 0.2s ease',
             pointerEvents: loading ? 'none' : 'auto',

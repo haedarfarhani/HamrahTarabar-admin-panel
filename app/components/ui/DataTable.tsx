@@ -1,57 +1,55 @@
 'use client';
 
-import { useEffect } from 'react';
-import { DataGrid, GridColDef, GridToolbar } from '@mui/x-data-grid';
-import { Paper } from '@mui/material';
+import dynamic from 'next/dynamic';
+import { GridColDef, GridToolbar, GridPaginationModel, GridSortModel } from '@mui/x-data-grid';
+import { Paper, Skeleton } from '@mui/material';
 
-let suppressCount = 0;
-let originalError: typeof console.error | null = null;
-
-function suppressFirstChildWarning() {
-  if (suppressCount === 0) {
-    originalError = console.error;
-    console.error = (...args: any[]) => {
-      if (
-        typeof args[0] === 'string' &&
-        args[0].includes(':first-child') &&
-        args[0].includes('potentially unsafe')
-      ) {
-        return;
-      }
-      originalError!(...args);
-    };
+// DataGrid در SSR استایل‌هایی با سلکتور :first-child تولید می‌کند که React 19
+// درباره‌ی آن هشدار می‌دهد. با بارگذاری فقط سمت کلاینت، این استایل‌ها هرگز در
+// سرور رندر نمی‌شوند و هشدار کاملاً از بین می‌رود.
+const DataGrid = dynamic(
+  () => import('@mui/x-data-grid').then((mod) => mod.DataGrid),
+  {
+    ssr: false,
+    loading: () => <Skeleton variant="rounded" height={400} sx={{ borderRadius: 0 }} />,
   }
-  suppressCount++;
+) as unknown as typeof import('@mui/x-data-grid').DataGrid;
+
+export interface DataTableServerSide {
+  /** تعداد کل رکوردها از meta.totalCount */
+  rowCount: number;
+  /** صفحه‌ی صفر-مبنا */
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  sortModel: GridSortModel;
+  onSortModelChange: (model: GridSortModel) => void;
 }
 
-function restoreFirstChildWarning() {
-  suppressCount--;
-  if (suppressCount === 0 && originalError) {
-    console.error = originalError;
-    originalError = null;
-  }
-}
-
-interface DataTableProps {
-  rows: any[];
+interface DataTableProps<T = Record<string, unknown>> {
+  rows: T[];
   columns: GridColDef[];
   loading?: boolean;
   pageSize?: number;
-  getRowId?: (row: any) => string | number;
+  getRowId?: (row: T) => string | number;
+  /** در صورت ارائه، صفحه‌بندی و سورت سمت‌سرور فعال می‌شود */
+  serverSide?: DataTableServerSide;
+  /** مخفی کردن تولبار جست‌وجو (در حالت سرور، فیلتر سمت‌کاربر گمراه‌کننده است) */
+  hideToolbar?: boolean;
+  localeText?: { noRowsLabel?: string };
 }
 
-export default function DataTable({
+export default function DataTable<T = Record<string, unknown>>({
   rows,
   columns,
   loading = false,
   pageSize = 10,
   getRowId,
-}: DataTableProps) {
-  useEffect(() => {
-    suppressFirstChildWarning();
-    return () => restoreFirstChildWarning();
-  }, []);
-
+  serverSide,
+  hideToolbar = false,
+  localeText,
+}: DataTableProps<T>) {
   return (
     <Paper
       elevation={0}
@@ -67,19 +65,33 @@ export default function DataTable({
         columns={columns}
         loading={loading}
         getRowId={getRowId}
-        pageSizeOptions={[5, 10, 25, 50]}
+        pageSizeOptions={[10, 20, 50, 100]}
         initialState={{
           pagination: { paginationModel: { pageSize } },
         }}
-        slots={{ toolbar: GridToolbar }}
+        {...(serverSide
+          ? {
+              paginationMode: 'server' as const,
+              sortingMode: 'server' as const,
+              rowCount: serverSide.rowCount,
+              paginationModel: { page: serverSide.page, pageSize: serverSide.pageSize },
+              onPaginationModelChange: (model: GridPaginationModel) => {
+                if (model.page !== serverSide.page) serverSide.onPageChange(model.page);
+                if (model.pageSize !== serverSide.pageSize) serverSide.onPageSizeChange(model.pageSize);
+              },
+              sortModel: serverSide.sortModel,
+              onSortModelChange: serverSide.onSortModelChange,
+            }
+          : {})}
+        slots={{ toolbar: hideToolbar ? undefined : GridToolbar }}
         slotProps={{
           toolbar: {
             showQuickFilter: true,
             quickFilterProps: { debounceMs: 300 },
           },
         }}
+        localeText={{ noRowsLabel: 'رکوردی یافت نشد', ...localeText }}
         disableColumnMenu
-        disableColumnSeparator
         disableRowSelectionOnClick
         autoHeight
         sx={{
@@ -87,6 +99,10 @@ export default function DataTable({
           '& .MuiDataGrid-cell': {
             borderBottom: '1px solid',
             borderColor: 'divider',
+          },
+          // جایگزین prop حذف‌شده‌ی disableColumnSeparator در MUI v9
+          '& .MuiDataGrid-columnSeparator': {
+            display: 'none',
           },
           '& .MuiDataGrid-columnHeaders': {
             bgcolor: 'action.hover',

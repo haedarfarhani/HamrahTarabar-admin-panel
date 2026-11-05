@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // worktreeهای محلی ابزارهای AI نباید لینت شوند
+    ".kilo/**",
   ]),
 ]);
 

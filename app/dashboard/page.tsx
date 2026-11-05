@@ -156,6 +156,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    // واکشی اولیه‌ی داشبورد هنگام باز شدن صفحه
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

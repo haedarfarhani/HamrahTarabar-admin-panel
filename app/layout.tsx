@@ -11,8 +11,13 @@ const vazirmatn = Vazirmatn({
 });
 
 export const metadata: Metadata = {
-  title: "پنل مدیریت",
-  description: "پنل مدیریت حمراهatraabar",
+  title: 'همراه ترابر | پنل مدیریت',
+  description: 'پنل مدیریت همراه ترابر',
+  icons: {
+    icon: '/brand-logo.svg',
+    shortcut: '/brand-logo.svg',
+    apple: '/brand-logo.svg',
+  },
 };
 
 export default function RootLayout({
